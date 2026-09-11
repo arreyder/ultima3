@@ -4,6 +4,12 @@ Prepared 2026-09-11 against `f13173e737a45cda4ae7807b87edceccb10ac03e`.
 Personal fork: https://github.com/arreyder/ultima3
 Upstream: https://github.com/hongjuny/ultima3
 
+Milestone 1 implementation: see [build instructions and validation](linux-build.md)
+and [platform/data inventory](linux-platform-inventory.md). The portable build
+and asset extraction are working. SDL2 is selected for baseline package
+availability, and Pillow converts images at build time. Runtime SDL/audio
+linking and the first game window remain in the following milestones.
+
 ## Goal and scope
 
 Build and run Ultima III natively on x86-64 Linux while preserving its game
