@@ -7,7 +7,7 @@ This document outlines architectural improvements, quality-of-life enhancements,
 | Section | State |
 |---|---|
 | 1. In-game settings overlay | Not started — the preference storage it needs is in place |
-| 2. Windowing & display | **Done** |
+| 2. Windowing & display | **Done**, plus text-size controls added on request |
 | 3. Audio & SoundFont discoverability | **Done** |
 | 4. Input & modern controls (gamepad) | Not started |
 | 5. Quality of life | Not started |
@@ -69,11 +69,42 @@ All of the above landed in `Sources/Linux/U3LinuxVideo.c`:
   (`U3LinuxVideoReadFrameForTesting`), not by eye. A shadow mask was not
   implemented; scanlines carry the effect.
 
-Two Linux-only preference keys (`LinuxSmoothScaling`, `LinuxScanlines`) extend
-`U3PreferenceKey`'s numbering from `U3LinuxPlatform.h` rather than the shared
-enum in `Sources/U3Platform.h`, which `U3PlatformLegacy.m` switches over
-exhaustively — adding members there would have broken the macOS build for
-options only the SDL host can honor.
+Three Linux-only preference keys (`LinuxSmoothScaling`, `LinuxScanlines`,
+`LinuxFontScale`) extend `U3PreferenceKey`'s numbering from `U3LinuxPlatform.h`
+rather than the shared enum in `Sources/U3Platform.h`, which
+`U3PlatformLegacy.m` switches over exhaustively — adding members there would
+have broken the macOS build for options only the SDL host can honor.
+
+### Text size (added after the fact)
+
+Not in the original objectives; added on request. Two controls, because
+measurement showed one knob cannot cover both directions:
+
+- `--font-scale <50..100>` / `F6` / `F7` scales every font size the game
+  requests, applied in `GetFontMetrics()` — the single point every text path
+  funnels through, so drawing and `U3CocoaTextWidth` measurement stay in
+  agreement and the game's own centring, right-alignment and word wrap follow
+  automatically.
+- `--double-size` / `--original-size` expose the game's existing tile size
+  (`blkSiz` 16 ↔ 32), which was reachable only through the macOS menu bar
+  before. This is the control for *larger* text.
+
+The 100% ceiling on `--font-scale` is measured, not cautious.
+`Sources/UltimaText.c` lays out one line per tile (`NewPrint` draws at
+`ty * blkSiz` into an offscreen exactly `blkSiz` tall) while `SetNewFont` asks
+for a font size of exactly `blkSiz`, so at 100% a glyph cell already fills its
+line. Rendering the conversation screen at 125% and 150% produced collided,
+unreadable text: each line erases its one-tile box, then draws glyphs that
+spill over the line drawn before it. Raising the ceiling means rescaling the
+line pitch in the shared text engine, which is a larger change than this was.
+
+Worth recording for whoever touches text next: the two appearances rasterize
+text completely differently. Classic blits each character from a pre-rendered
+font sheet, one tile per character (`UPrint`), and never reaches this port's
+glyph rasterizer at all — the first round of font-scale screenshots came back
+byte-identical for that reason. Only the modern appearance goes through
+`NewPrint` → `U3CocoaDrawPascalString` → `GetFontMetrics`, so `--font-scale`
+affects modern only.
 
 ---
 

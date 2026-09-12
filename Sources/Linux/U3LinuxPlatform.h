@@ -107,6 +107,11 @@ const U3LinuxInputSource *U3LinuxPlatformGetInputSource(void);
  * scanline filter. */
 #define U3PreferenceLinuxScanlines ((U3PreferenceKey)(U3PreferenceTileSet + 2))
 
+/* Percentage applied to every font size the game asks for, 100 being
+ * unchanged. Integer-typed, so unlike the booleans above its "absent" value
+ * comes from the backing table's default rather than being false. */
+#define U3PreferenceLinuxFontScale ((U3PreferenceKey)(U3PreferenceTileSet + 3))
+
 /* ---------------------------------------------------------------------
  * Preferences: test / integration helpers
  *

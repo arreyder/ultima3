@@ -39,6 +39,9 @@ From the repository root or build directory:
 | `--scale <n>` | Initial window scale multiplier (default: `1`). Clamped to fit the display. |
 | `--integer-scale` | Scale the game by whole pixels, keeping the original pixel grid crisp (default). |
 | `--smooth-scale` | Fit the window exactly, preserving aspect ratio, with linear filtering. |
+| `--double-size` | 32 px tiles: larger art, text and line spacing on a 1280×768 canvas. |
+| `--original-size` | 16 px tiles: the original 640×384 layout. |
+| `--font-scale <percent>` | Shrink text relative to the tile size, `50`–`100` (default: `100`). See [Text size](#text-size). |
 | `--crt` | Enable the CRT scanline filter. |
 | `--no-crt` | Disable the CRT scanline filter. |
 | `--classic` | Use classic Mac 1x appearance (640×384 canvas, text stats). |
@@ -64,10 +67,41 @@ so a choice made in-game persists the same way the CLI flags do.
 | `F11`, `Alt`+`Enter` | Toggle desktop fullscreen. |
 | `F10` | Toggle the CRT scanline filter. |
 | `F8` | Toggle smooth vs. whole-pixel scaling. |
+| `F6`, `F7` | Shrink / restore text size, in 25% steps down to 50%. |
 
 The window is freely resizable. Dragging it re-letterboxes the game live,
 preserving its 5:3 aspect ratio; shrinking it below 640×384 scales the whole
 screen down rather than cropping it.
+
+### Text size
+
+Two separate controls, because they do different things.
+
+**To make text bigger, change the tile size** — `--double-size` (32 px tiles,
+1280×768) against `--original-size` (16 px tiles, 640×384). This is the game's
+own mechanism and it scales art, text and line spacing together, so the layout
+stays correct. On a large display it is what you want.
+
+**To make text smaller, use `--font-scale`** (or `F6`), from 100% down to 50%.
+The game measures text to centre, right-align and wrap it, so reducing the
+scale genuinely fits more words per line rather than just shrinking glyphs.
+
+`--font-scale` deliberately stops at 100% and will clamp anything higher. The
+shared text engine puts one line per tile while asking for a font size of
+exactly one tile, so at 100% a glyph cell already fills its line; larger values
+were tried and render as collided, unreadable lines, because each line erases
+its own one-tile box and then draws glyphs that spill over the line before it.
+Raising that ceiling means rescaling the layout's line pitch in the
+cross-platform text engine.
+
+`--font-scale` affects the **modern appearance only**. Classic appearance blits
+each character from a pre-rendered font sheet, one tile per character, and never
+reaches the glyph rasterizer the scale applies to — its text size is the tile
+size by construction.
+
+The two compose: `--double-size --font-scale 75` gives text larger than the
+original 640×384 layout while still fitting more words per line than
+`--double-size` alone.
 
 ### Asset discovery
 

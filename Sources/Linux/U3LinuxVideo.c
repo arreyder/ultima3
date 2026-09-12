@@ -91,6 +91,7 @@ static bool gHeadlessDiagnostic = false;
  * happens once per game frame. */
 static bool gSmoothScaling = false;
 static bool gScanlines = false;
+static int gFontScalePercent = 100;
 static bool gPresentationOptionsLoaded = false;
 
 /* ---- Input ---- */
@@ -330,8 +331,56 @@ static void EnsureFontLoaded(void) {
     gFontBitmap = loaded;
 }
 
-static void GetFontMetrics(int *outCellW, int *outCellH, int *outAscent) {
+/* Font scale limits.
+ *
+ * The maximum is 100, i.e. "no larger than the game asked for", and that is a
+ * real constraint rather than caution. Sources/UltimaText.c lays text out on a
+ * grid of one tile per line (NewPrint draws at ty * blkSiz into an offscreen
+ * exactly blkSiz tall) while SetNewFont asks for a font size of exactly
+ * blkSiz -- so at 100% a glyph cell already fills its own line completely.
+ * Going above it was tried and rendered as collided, unreadable lines: each
+ * line erases its blkSiz-tall box and then draws glyphs that spill outside it,
+ * over the line drawn before. Fixing that means rescaling the layout's line
+ * pitch, which lives in the shared cross-platform text engine.
+ *
+ * Larger text is instead the tile size's job (blkSiz 16 -> 32, the game's own
+ * "double size" mode), which scales art, text and line pitch together. See
+ * --double-size in Sources/Linux/main.c.
+ */
+#define U3_FONT_SCALE_MIN 50
+#define U3_FONT_SCALE_MAX 100
+
+static int ClampFontScale(int percent) {
+    if (percent < U3_FONT_SCALE_MIN) return U3_FONT_SCALE_MIN;
+    if (percent > U3_FONT_SCALE_MAX) return U3_FONT_SCALE_MAX;
+    return percent;
+}
+
+/* The font size to actually render at: what the game asked for via
+ * TextSize(), adjusted by the player's font scale.
+ *
+ * Applied here rather than in U3CocoaSetTextSize so the game's own value is
+ * preserved and rescaled per draw -- and because every text path (draw,
+ * TextWidth, the dialogs drawn in this file) funnels through GetFontMetrics,
+ * so one adjustment here keeps measurement and drawing in agreement. That
+ * matters: the game centers and right-aligns text with U3CocoaTextWidth, and
+ * wraps message lines by measured width, so those all follow the scale
+ * automatically.
+ */
+static int ScaledTextSize(void) {
     int size = gTextSize > 0 ? gTextSize : 16;
+    if (gFontScalePercent == 100)
+        return size; /* exact 1:1 path, no rounding at all */
+    int scaled = (size * gFontScalePercent + 50) / 100;
+    /* Below ~6px the glyph strip is unreadable; above 64 nothing in the
+     * game's layout could hold it. */
+    if (scaled < 6) scaled = 6;
+    if (scaled > 64) scaled = 64;
+    return scaled;
+}
+
+static void GetFontMetrics(int *outCellW, int *outCellH, int *outAscent) {
+    int size = ScaledTextSize();
     if (size == 16) {
         *outCellW = 16;
         *outCellH = 16;
@@ -631,6 +680,25 @@ static void LoadPresentationOptions(void) {
     gPresentationOptionsLoaded = true;
     gSmoothScaling = U3PlatformGetBooleanPreference(U3PreferenceLinuxSmoothScaling);
     gScanlines = U3PlatformGetBooleanPreference(U3PreferenceLinuxScanlines);
+    gFontScalePercent = ClampFontScale(U3PlatformGetIntegerPreference(U3PreferenceLinuxFontScale));
+}
+
+void U3LinuxVideoSetFontScalePercent(int percent) {
+    gPresentationOptionsLoaded = true;
+    gFontScalePercent = ClampFontScale(percent);
+    U3PlatformSetIntegerPreference(U3PreferenceLinuxFontScale, gFontScalePercent);
+    /* Text is drawn into the game's bitmap, not composited at present time, so
+     * a new scale only shows up where the game redraws. Ask it to repaint
+     * everything rather than leaving a half-rescaled screen behind. */
+    if (gSurfaceCreated) {
+        U3CocoaInvalidateMainSurface();
+        U3CocoaPresentMainSurface();
+    }
+}
+
+int U3LinuxVideoFontScalePercent(void) {
+    LoadPresentationOptions();
+    return gFontScalePercent;
 }
 
 void U3LinuxVideoSetSmoothScaling(bool smooth) {
@@ -907,6 +975,17 @@ static bool HandleDisplayKey(const SDL_KeyboardEvent *key) {
     }
     if (sym == SDLK_F8) {
         U3LinuxVideoSetSmoothScaling(!gSmoothScaling);
+        return true;
+    }
+    /* Font size in 25-point steps, the granularity at which a 16px glyph cell
+     * actually changes size (16 -> 20 -> 24). Smaller increments would round
+     * back to the same cell and look like a dead key. */
+    if (sym == SDLK_F6) {
+        U3LinuxVideoSetFontScalePercent(gFontScalePercent - 25);
+        return true;
+    }
+    if (sym == SDLK_F7) {
+        U3LinuxVideoSetFontScalePercent(gFontScalePercent + 25);
         return true;
     }
     return false;

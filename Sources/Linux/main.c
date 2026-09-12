@@ -171,7 +171,7 @@ static const char *FindAssetsDirectory(int argc, char **argv) {
         if (!strcmp(argv[i], "--script") || !strcmp(argv[i], "--scale") ||
             !strcmp(argv[i], "--screenshot") || !strcmp(argv[i], "--assets") ||
             !strcmp(argv[i], "--step-delay") || !strcmp(argv[i], "--speech-engine") ||
-            !strcmp(argv[i], "--speech-cmd")) {
+            !strcmp(argv[i], "--speech-cmd") || !strcmp(argv[i], "--font-scale")) {
             ++i;
             continue;
         }
@@ -256,12 +256,17 @@ static void PrintUsage(const char *prog) {
     fprintf(stdout, "  --modern                 Use modern appearance with character portraits and status bars\n");
     fprintf(stdout, "  --integer-scale          Scale by whole pixels, keeping the pixel grid crisp (default)\n");
     fprintf(stdout, "  --smooth-scale           Fit the window exactly, preserving aspect ratio\n");
+    fprintf(stdout, "  --double-size            32px tiles: larger art, text and line spacing (1280x768)\n");
+    fprintf(stdout, "  --original-size          16px tiles: the original 640x384 layout\n");
+    fprintf(stdout, "  --font-scale <percent>   Shrink text relative to the tile size, 50-100 (default: 100)\n");
+    fprintf(stdout, "                           For larger text use --double-size; see docs/controls.md\n");
     fprintf(stdout, "  --crt                    Enable the CRT scanline filter\n");
     fprintf(stdout, "  --no-crt                 Disable the CRT scanline filter\n");
     fprintf(stdout, "\nDisplay keys (also saved to the preferences file):\n");
     fprintf(stdout, "  F11, Alt+Enter           Toggle fullscreen\n");
     fprintf(stdout, "  F10                      Toggle the CRT scanline filter\n");
     fprintf(stdout, "  F8                       Toggle smooth vs. whole-pixel scaling\n");
+    fprintf(stdout, "  F6, F7                   Shrink / restore text size (50-100%%)\n");
     fprintf(stdout, "\nAudio options:\n");
     fprintf(stdout, "  --no-audio               Disable audio playback\n");
     fprintf(stdout, "  --speech                 Enable text-to-speech synthesis\n");
@@ -287,6 +292,10 @@ int main(int argc, char *argv[]) {
     /* -1 leaves the stored preference alone; 0/1 override it. */
     int smoothScaling = -1;
     int scanlines = -1;
+    /* 0 leaves the stored font scale alone; otherwise a percentage. */
+    int fontScale = 0;
+    /* -1 leaves the stored tile size alone; 0/1 select double/original. */
+    int originalSize = -1;
 
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
@@ -312,6 +321,14 @@ int main(int argc, char *argv[]) {
             smoothScaling = 1;
         } else if (!strcmp(argv[i], "--integer-scale")) {
             smoothScaling = 0;
+        } else if (!strcmp(argv[i], "--double-size")) {
+            originalSize = 0;
+        } else if (!strcmp(argv[i], "--original-size")) {
+            originalSize = 1;
+        } else if (!strcmp(argv[i], "--font-scale") && i + 1 < argc) {
+            fontScale = atoi(argv[++i]);
+        } else if (!strncmp(argv[i], "--font-scale=", 13)) {
+            fontScale = atoi(argv[i] + 13);
         } else if (!strcmp(argv[i], "--crt")) {
             scanlines = 1;
         } else if (!strcmp(argv[i], "--no-crt")) {
@@ -387,6 +404,16 @@ int main(int argc, char *argv[]) {
     } else if (modern) {
         U3PlatformSetBooleanPreference(U3PreferenceClassicAppearance, false);
     }
+    /* After the classic/modern block, so an explicit size flag overrides the
+     * original size --classic implies rather than being silently dropped.
+     *
+     * Setting the preference at all also matters beyond its value: with the key
+     * absent, SetUpDisplayDialog() in UltimaMacIF.c picks a default from the
+     * screen dimensions instead, which is why an unattended or headless run can
+     * otherwise land on a different tile size than a desktop one. */
+    if (originalSize >= 0) {
+        U3PlatformSetBooleanPreference(U3PreferenceOriginalSize, originalSize != 0);
+    }
     if (getenv("U3_NO_SPEECH")) {
         U3PlatformSetBooleanPreference(U3PreferenceSpeechDisabled, true);
     } else if (getenv("U3_SPEECH")) {
@@ -398,6 +425,9 @@ int main(int argc, char *argv[]) {
     }
     if (scanlines >= 0) {
         U3LinuxVideoSetScanlines(scanlines != 0);
+    }
+    if (fontScale > 0) {
+        U3LinuxVideoSetFontScalePercent(fontScale);
     }
     U3LinuxAudioConfigure(assetsDir, noAudio);
     U3LinuxCarbonConfigure(assetsDir);

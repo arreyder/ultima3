@@ -92,3 +92,26 @@ void U3LinuxVideoPresentationRectForTesting(int windowWidth, int windowHeight,
  * cannot read back. */
 bool U3LinuxVideoReadFrameForTesting(uint8_t *rgba, size_t capacity,
                                      int *outWidth, int *outHeight);
+
+/* Percentage applied to every font size the game requests. Clamped to 50..100
+ * and persisted like the options above.
+ *
+ * 100 is the maximum by necessity, not caution: the shared text engine
+ * (Sources/UltimaText.c) lays lines out one tile apart while asking for a font
+ * size of exactly one tile, so at 100% a glyph cell already fills its line and
+ * anything larger renders as collided, unreadable text. For *larger* text the
+ * control is the tile size -- the game's own double-size mode, which scales
+ * art, text and line pitch together.
+ *
+ * Reducing the scale is well behaved: the game measures with U3CocoaTextWidth
+ * to centre, right-align and wrap, so those all follow automatically and more
+ * words fit per line.
+ *
+ * Only the modern appearance is affected. Classic appearance blits text from a
+ * pre-rendered font sheet one tile per character (the UPrint path in
+ * UltimaText.c) and never reaches this file's glyph rasterizer.
+ *
+ * Takes effect where the game next redraws; the setter asks for a full
+ * repaint so a change does not leave half the screen at the old size. */
+void U3LinuxVideoSetFontScalePercent(int percent);
+int U3LinuxVideoFontScalePercent(void);

@@ -141,6 +141,41 @@ int main(int argc, char **argv) {
         }
     assert(sawInk && "drawing \"AB\" through the bitmap font should paint at least one white pixel");
 
+    /* --- Font scale ---
+     *
+     * Measurement and drawing must move together: the game centres,
+     * right-aligns and wraps text by asking U3CocoaTextWidth, so a scale that
+     * changed the glyphs without changing the measurement would misplace every
+     * one of those. Checked on the metric rather than on pixels for that
+     * reason. */
+    assert(U3LinuxVideoFontScalePercent() == 100 && "unset font scale should mean 100%");
+    U3LinuxVideoSetFontScalePercent(50);
+    assert(U3LinuxVideoFontScalePercent() == 50);
+    short narrow = U3CocoaTextWidth(greeting);
+    assert(narrow > 0 && narrow < width && "halving the font scale should narrow measured text");
+    /* Baseline 33 keeps this sample clear of the rows the DrawBytes comparison
+     * below comes back to: the 16px string above occupies rows 0-15 and that
+     * one rows 40-55. */
+    U3CocoaMoveTo(0, 33);
+    { Point pen; U3CocoaGetPen(&pen); penBefore = pen.h; }
+    U3CocoaDrawPascalString(greeting);
+    { Point pen; U3CocoaGetPen(&pen);
+      assert(pen.h == penBefore + narrow && "the pen must advance by the scaled width"); }
+
+    /* 100% is the ceiling, and not out of caution: the shared text engine puts
+     * one line per tile while asking for a font of exactly one tile, so larger
+     * glyphs collide with the neighbouring lines. Verified by rendering, so
+     * pin the clamp to keep it from being loosened by accident. */
+    U3LinuxVideoSetFontScalePercent(150);
+    assert(U3LinuxVideoFontScalePercent() == 100 && "font scale must clamp at 100%");
+    U3LinuxVideoSetFontScalePercent(1);
+    assert(U3LinuxVideoFontScalePercent() == 50 && "font scale must clamp at 50%");
+
+    /* Back to 1:1, both so the assertions below still describe 16px cells and
+     * so a rerun against the same preferences file starts where this one did. */
+    U3LinuxVideoSetFontScalePercent(100);
+    assert(U3CocoaTextWidth(greeting) == width);
+
     /* DrawBytes must produce the same glyphs/advance as DrawPascalString. */
     U3CocoaMoveTo(0, 53);
     U3CocoaDrawBytes("AB", 0, 2);

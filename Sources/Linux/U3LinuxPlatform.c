@@ -496,6 +496,7 @@ static const PrefMeta kPrefMeta[] = {
      * shared enum's numbering rather than the enum itself. */
     [U3PreferenceLinuxSmoothScaling] = {"LinuxSmoothScaling", PrefTypeBool, 0},
     [U3PreferenceLinuxScanlines] = {"LinuxScanlines", PrefTypeBool, 0},
+    [U3PreferenceLinuxFontScale] = {"LinuxFontScale", PrefTypeInt, 100},
 };
 #define kPrefCount (sizeof(kPrefMeta) / sizeof(kPrefMeta[0]))
 
