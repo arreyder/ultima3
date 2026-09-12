@@ -234,3 +234,16 @@ int main(int argc, char **argv) {
     fprintf(stderr, "\nall checks passed\n");
     return 0;
 }
+
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+const char *__lsan_default_suppressions(void) {
+    return "leak:libfluidsynth\nleak:libglib\nleak:libgobject\nleak:libinstpatch\n";
+}
+#endif
+#elif defined(__SANITIZE_ADDRESS__)
+const char *__lsan_default_suppressions(void) {
+    return "leak:libfluidsynth\nleak:libglib\nleak:libgobject\nleak:libinstpatch\n";
+}
+#endif
+

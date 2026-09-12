@@ -166,6 +166,7 @@ static void PrintUsage(const char *prog) {
     fprintf(stdout, "  --fullscreen             Run in fullscreen mode\n");
     fprintf(stdout, "  --scale <1|2>            Window scale multiplier (default: 1)\n");
     fprintf(stdout, "  --classic                Use classic 640x384 appearance\n");
+    fprintf(stdout, "  --modern                 Use modern appearance with character portraits and status bars\n");
     fprintf(stdout, "\nAudio options:\n");
     fprintf(stdout, "  --no-audio               Disable audio playback\n");
     fprintf(stdout, "\nAsset options:\n");
@@ -182,6 +183,7 @@ int main(int argc, char *argv[]) {
     bool forceWindowed = true;
     bool forceFullscreen = false;
     bool classic = false;
+    bool modern = false;
     bool noAudio = false;
 
     for (int i = 1; i < argc; ++i) {
@@ -202,6 +204,8 @@ int main(int argc, char *argv[]) {
             if (scale < 1) scale = 1;
         } else if (!strcmp(argv[i], "--classic")) {
             classic = true;
+        } else if (!strcmp(argv[i], "--modern")) {
+            modern = true;
         } else if (!strcmp(argv[i], "--no-audio")) {
             noAudio = true;
         } else if (!strcmp(argv[i], "--script") && i + 1 < argc) {
@@ -256,6 +260,8 @@ int main(int argc, char *argv[]) {
     if (classic) {
         U3PlatformSetBooleanPreference(U3PreferenceClassicAppearance, true);
         U3PlatformSetBooleanPreference(U3PreferenceOriginalSize, true);
+    } else if (modern) {
+        U3PlatformSetBooleanPreference(U3PreferenceClassicAppearance, false);
     }
     U3LinuxVideoConfigure(assets, "Ultima III", scale);
     U3LinuxAudioConfigure(assetsDir, noAudio);
@@ -313,3 +319,16 @@ int main(int argc, char *argv[]) {
 
     return result;
 }
+
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+const char *__lsan_default_suppressions(void) {
+    return "leak:libfluidsynth\nleak:libglib\nleak:libgobject\nleak:libinstpatch\n";
+}
+#endif
+#elif defined(__SANITIZE_ADDRESS__)
+const char *__lsan_default_suppressions(void) {
+    return "leak:libfluidsynth\nleak:libglib\nleak:libgobject\nleak:libinstpatch\n";
+}
+#endif
+

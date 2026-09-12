@@ -69,7 +69,7 @@ static int gSelectedOriginX = 0, gSelectedOriginY = 0;
 static uint8_t gForeground[3] = {255, 255, 255};
 static uint8_t gBackground[3] = {0, 0, 0};
 static short gPenH = 0, gPenV = 0;
-static short gTextFont = 0, gTextSize = 12, gTextFace = 0;
+static short gTextFont = 0, gTextSize = 16, gTextFace = 0;
 static U3Bitmap gFontBitmap = {0};
 static bool gFontLoadAttempted = false;
 
@@ -287,7 +287,7 @@ void U3CocoaGetBackground(uint8_t color[3]) {
 }
 
 void U3CocoaSetTextFont(short font) { gTextFont = font; }
-void U3CocoaSetTextSize(short size) { gTextSize = size > 0 ? size : 12; }
+void U3CocoaSetTextSize(short size) { gTextSize = size > 0 ? size : 16; }
 void U3CocoaSetTextFace(short face) { gTextFace = face; }
 
 void U3CocoaMoveTo(short h, short v) {
@@ -321,19 +321,53 @@ static void EnsureFontLoaded(void) {
     gFontBitmap = loaded;
 }
 
-static void DrawGlyphCell(U3Bitmap *target, int x, int y, unsigned char ch, Boolean bold) {
+static void GetFontMetrics(int *outCellW, int *outCellH, int *outAscent) {
+    int size = gTextSize > 0 ? gTextSize : 16;
+    if (size == 16) {
+        *outCellW = 16;
+        *outCellH = 16;
+        *outAscent = 13;
+    } else if (size < 16) {
+        int h = size >= 8 ? size : 8;
+        *outCellH = h;
+        if (h <= 9) {
+            *outCellW = 6;
+        } else if (h <= 11) {
+            *outCellW = 7;
+        } else if (h <= 13) {
+            *outCellW = 8;
+        } else {
+            *outCellW = 10;
+        }
+        *outAscent = (int)((13.0f * h) / 16.0f + 0.5f);
+    } else {
+        *outCellH = size;
+        *outCellW = size;
+        *outAscent = (int)((13.0f * size) / 16.0f + 0.5f);
+    }
+}
+
+static void DrawGlyphCell(U3Bitmap *target, int x, int y, unsigned char ch,
+                          int cellW, int cellH, int ascent, Boolean bold) {
     if (!gFontBitmap.pixels)
         return;
     if (ch < U3_GLYPH_FIRST || ch >= U3_GLYPH_FIRST + U3_GLYPH_COUNT)
         return;
     int cellX = (ch - U3_GLYPH_FIRST) * U3_GLYPH_CELL;
-    for (int dy = 0; dy < U3_GLYPH_CELL; ++dy) {
-        int ty = y + dy;
+    int topY = y - ascent;
+    for (int dy = 0; dy < cellH; ++dy) {
+        int ty = topY + dy;
         if (ty < 0 || ty >= target->height)
             continue;
-        const uint8_t *srcRow = gFontBitmap.pixels + (size_t)dy * gFontBitmap.stride + (size_t)cellX * 4;
-        for (int dx = 0; dx < U3_GLYPH_CELL; ++dx) {
-            if (srcRow[dx * 4] <= 128)
+        int sy = (cellH == U3_GLYPH_CELL) ? dy : (int)((dy * U3_GLYPH_CELL + cellH / 2) / cellH);
+        if (sy < 0) sy = 0;
+        if (sy >= U3_GLYPH_CELL) sy = U3_GLYPH_CELL - 1;
+        const uint8_t *srcRow = gFontBitmap.pixels + (size_t)sy * gFontBitmap.stride + (size_t)cellX * 4;
+        for (int dx = 0; dx < cellW; ++dx) {
+            int sx = (cellW == U3_GLYPH_CELL) ? dx : (int)((dx * U3_GLYPH_CELL + cellW / 2) / cellW);
+            if (sx < 0) sx = 0;
+            if (sx >= U3_GLYPH_CELL) sx = U3_GLYPH_CELL - 1;
+            if (srcRow[sx * 4] <= 128)
                 continue; /* background pixel in the glyph strip: leave destination alone */
             PutPixel(target, x + dx, ty, gForeground);
             if (bold)
@@ -349,10 +383,12 @@ void U3CocoaDrawPascalString(ConstStr255Param text) {
     U3Bitmap *target;
     int offX, offY;
     ResolveTarget(&target, &offX, &offY);
+    int cellW, cellH, ascent;
+    GetFontMetrics(&cellW, &cellH, &ascent);
     int x = gPenH - offX, y = gPenV - offY;
     for (int i = 1; i <= text[0]; ++i) {
-        DrawGlyphCell(target, x, y, text[i], (Boolean)(gTextFace & bold));
-        x += U3_GLYPH_CELL;
+        DrawGlyphCell(target, x, y, text[i], cellW, cellH, ascent, (Boolean)(gTextFace & bold));
+        x += cellW;
     }
     gPenH = (short)(gPenH + U3CocoaTextWidth(text));
     if (!gSelectedBitmap)
@@ -362,7 +398,9 @@ void U3CocoaDrawPascalString(ConstStr255Param text) {
 short U3CocoaTextWidth(ConstStr255Param text) {
     if (!text)
         return 0;
-    long width = (long)text[0] * U3_GLYPH_CELL;
+    int cellW, cellH, ascent;
+    GetFontMetrics(&cellW, &cellH, &ascent);
+    long width = (long)text[0] * cellW;
     return (short)(width > 32767 ? 32767 : width);
 }
 

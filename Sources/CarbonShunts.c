@@ -662,8 +662,13 @@ void CopyBits(const BitMap *srcBits, const BitMap *dstBits, const Rect *srcRect,
     U3BitmapRect from = {0}, to = {0};
     U3Bitmap *source = U3ResolveBitmap(srcBits, srcRect, &from);
     U3Bitmap *destination = U3ResolveBitmap(dstBits, dstRect, &to);
-    if (maskRgn || (mode != srcCopy && mode != ditherCopy))
+    if (maskRgn || (mode != srcCopy && mode != ditherCopy && mode != blend))
         return;
+    if (mode == blend) {
+        if (U3BitmapCopyBlend(destination, to, source, from, 0.5f) && destination == U3CocoaMainBitmap())
+            U3CocoaInvalidateMainSurface();
+        return;
+    }
     if (U3BitmapCopy(destination, to, source, from) && destination == U3CocoaMainBitmap())
         U3CocoaInvalidateMainSurface();
 }

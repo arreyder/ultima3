@@ -14,6 +14,9 @@ From the repository root or build directory:
 # Launch in default windowed mode (1280x768):
 ./build/linux-game/ultima3
 
+# Launch in modern appearance mode with portraits & status bars:
+./build/linux-game/ultima3 --modern
+
 # Launch in classic 1x windowed mode (640x384):
 ./build/linux-game/ultima3 --classic
 
@@ -34,7 +37,8 @@ From the repository root or build directory:
 | `--windowed`, `--window` | Force windowed mode (default). Automatically clamps to 90% of screen bounds to prevent display overflows. |
 | `--fullscreen` | Run in desktop borderless fullscreen mode. |
 | `--scale <1\|2>` | Window scale multiplier (default: `1`). |
-| `--classic` | Use classic Apple II / Mac 1x appearance (640×384 canvas). |
+| `--classic` | Use classic Mac 1x appearance (640×384 canvas, text stats). |
+| `--modern` | Use modern appearance (character portraits, visual HP/Mana/Level bars, food gauges). |
 | `--no-audio` | Disable SDL audio output and FluidSynth MIDI playback. |
 | `--script <keys>` | Programmatically execute a sequence of turns/commands (for automated tests or headless agent control). |
 | `--screenshot <file>` | Capture the final rendered frame to a BMP or PNG file upon script completion. |

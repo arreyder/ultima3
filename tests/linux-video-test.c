@@ -127,7 +127,7 @@ int main(int argc, char **argv) {
     short width = U3CocoaTextWidth(greeting);
     assert(width == 32); /* two 16px glyph cells */
     U3CocoaSetForegroundQuickDrawColor(whiteColor);
-    U3CocoaMoveTo(0, 0);
+    U3CocoaMoveTo(0, 13);
     short penBefore = 0;
     { Point pen; U3CocoaGetPen(&pen); penBefore = pen.h; }
     U3CocoaDrawPascalString(greeting);
@@ -142,7 +142,7 @@ int main(int argc, char **argv) {
     assert(sawInk && "drawing \"AB\" through the bitmap font should paint at least one white pixel");
 
     /* DrawBytes must produce the same glyphs/advance as DrawPascalString. */
-    U3CocoaMoveTo(0, 40);
+    U3CocoaMoveTo(0, 53);
     U3CocoaDrawBytes("AB", 0, 2);
     for (int y = 0; y < 16; ++y)
         for (int x = 0; x < 32; ++x) {
