@@ -134,20 +134,33 @@ int U3LinuxVideoFontScalePercent(void);
  * ------------------------------------------------------------------- */
 typedef void (*U3LinuxVideoOverlayHandler)(void);
 
-/* Installs the overlay handler, or NULL to disable F1 entirely. Call once at
- * startup. Without a handler, F1 is still swallowed rather than reaching the
+/* The overlays this layer knows how to open, and the key that asks for each.
+ * They share one deferral mechanism rather than having one apiece, so the
+ * "run it at a safe point, never re-entrantly" rule is written once. */
+typedef enum U3LinuxVideoOverlayKind {
+    U3LinuxVideoOverlaySettings = 0, /* F1 */
+    U3LinuxVideoOverlayReference,    /* F2 */
+    U3LinuxVideoOverlayKindCount
+} U3LinuxVideoOverlayKind;
+
+/* Installs a handler, or NULL to disable that overlay's key. Call once at
+ * startup. With no handler the key is still swallowed rather than reaching the
  * game as a command. */
-void U3LinuxVideoSetOverlayHandler(U3LinuxVideoOverlayHandler handler);
+void U3LinuxVideoSetOverlayHandler(U3LinuxVideoOverlayKind kind,
+                                   U3LinuxVideoOverlayHandler handler);
 
-/* Requests the overlay as if F1 had been pressed; it opens at the next safe
- * point. Lets other input sources (a gamepad Start button, a menu item) open
- * it without duplicating the deferral rules above. */
-void U3LinuxVideoRequestOverlay(void);
+/* Requests an overlay as if its key had been pressed; it opens at the next safe
+ * point. Lets other input sources (a gamepad button, a menu item) open one
+ * without duplicating the deferral rules above. */
+void U3LinuxVideoRequestOverlay(U3LinuxVideoOverlayKind kind);
 
-/* True while the handler is running. The overlay draws into the game's own
- * bitmap, so anything that would otherwise repaint the screen underneath it
- * can use this to hold off. */
+/* True while any overlay handler is running. An overlay draws into the game's
+ * own bitmap, so anything that would otherwise repaint the screen underneath
+ * it can use this to hold off. */
 bool U3LinuxVideoOverlayIsOpen(void);
+
+/* Convenience for the reference card, which registers itself the same way. */
+void U3LinuxVideoSetReferenceHandler(U3LinuxVideoOverlayHandler handler);
 
 /* Cell width, cell height and baseline ascent, in pixels, that the built-in
  * bitmap font currently rasterizes at -- i.e. after both the size the game last

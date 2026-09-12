@@ -65,6 +65,7 @@ so a choice made in-game persists the same way the CLI flags do.
 | Key | Action |
 |---|---|
 | `F1` | Open the settings overlay. |
+| `F2` | Open the command and spell reference card. |
 | `F11`, `Alt`+`Enter` | Toggle desktop fullscreen. |
 | `F10` | Toggle the CRT scanline filter. |
 | `F8` | Toggle smooth vs. whole-pixel scaling. |
@@ -73,6 +74,22 @@ so a choice made in-game persists the same way the CLI flags do.
 The window is freely resizable. Dragging it re-letterboxes the game live,
 preserving its 5:3 aspect ratio; shrinking it below 640×384 scales the whole
 screen down rather than cropping it.
+
+### Reference card
+
+Press **`F2`**. Ultima III expects you to know 26 single-letter commands and to
+pick spells by letter from names like `REPOND` and `ANJU SERMANI` — all of which
+shipped on a printed card in 1983. This is that card.
+
+Three pages, changed with **Left/Right** (or `Tab`), closed with **`Esc`**:
+commands A–Z, wizard spells A–S, cleric spells A–P.
+
+The spell names are read from the game's own string table rather than copied
+into the port, so they cannot drift from what the game actually casts. Wizard
+`Q`–`S` are the bonus spells unlocked later in the game and are listed as such;
+wizard `P` is an unused slot in the original table and shows as `--`.
+
+If you are hunting for the one that lights a dungeon: **`I`, Ignite torch**.
 
 ### Settings overlay
 

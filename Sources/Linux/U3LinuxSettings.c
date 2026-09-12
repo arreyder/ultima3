@@ -17,6 +17,7 @@
 
 #include "U3LinuxSettings.h"
 #include "U3LinuxVideo.h"
+#include "U3LinuxOverlay.h"
 #include "U3LinuxPlatform.h"
 #include "U3LinuxSpeech.h"
 #include "U3LegacyTypes.h"
@@ -301,69 +302,14 @@ bool U3LinuxSettingsAdjustRow(int index, int delta) {
 /* ==========================================================================
  * Modal presentation
  *
- * Local copies of the small dialog helpers U3LinuxVideo.c keeps private. They
- * are a dozen lines each and use only public U3Cocoa* entry points, which is a
- * better trade than exporting that file's internals for one caller.
+ * The screen save/restore, the text helper and the modal key loop all live in
+ * U3LinuxOverlay.{c,h}, shared with the reference card.
  * ========================================================================== */
 
-static void OverlayText(short x, short y, const char *ascii) {
-    Str255 pstring;
-    size_t length = strlen(ascii);
-    if (length > 255) length = 255;
-    pstring[0] = (unsigned char)length;
-    memcpy(pstring + 1, ascii, length);
-    U3CocoaMoveTo(x, y);
-    U3CocoaDrawPascalString(pstring);
-}
-
-/* Blocks for one keypress on the same input path the rest of the game uses.
- * Under a headless diagnostic run, exhausting the scripted keys reads as
- * Escape rather than spinning forever, matching ModalReadKey in
- * U3LinuxVideo.c -- without which the overlay would hang every scripted test
- * that happens to open it. */
-static char ReadKey(void) {
-    for (;;) {
-        char key = 0;
-        Boolean isMouse = false;
-        Boolean headless = U3CocoaIsHeadlessDiagnostic();
-        Boolean got = U3CocoaPollKeyMouse(true, headless ? 0 : 6, &key, &isMouse);
-        if (headless) {
-            if (!got)
-                return 27;
-            if (isMouse)
-                continue;
-            return key;
-        }
-        if (got && !isMouse)
-            return key;
-        U3CocoaPresentMainSurface();
-    }
-}
-
-/* Lays the overlay out from measured font metrics rather than an assumed cell
- * size. The game leaves TextSize() wherever its last draw put it, and the
- * player's font scale applies on top, so a hard-coded 16px cell overflowed the
- * screen edge as soon as either changed. Everything below is expressed in
- * measured cells for that reason.
- *
- * The row pitch is exactly one cell, which is also the pitch the game's own
- * text engine uses. Adding leading pushed the 22 lines this overlay needs past
- * the bottom of a 640x384 screen; the glyph box already carries its own
- * padding, so lines do not actually touch. */
-static void DrawOverlay(int cursor) {
-    U3Bitmap *bitmap = U3CocoaMainBitmap();
-    if (!bitmap)
-        return;
-    const short width = (short)bitmap->width, height = (short)bitmap->height;
-
-    /* Ask for a cell sized to the canvas, so the overlay stays proportionate in
-     * the game's double-size mode instead of shrinking into a corner. */
-    U3CocoaSetTextSize(bitmap->width >= 1280 ? 32 : 16);
-    int cellW = 16, cellH = 16, ascent = 13;
-    U3LinuxVideoTextCellSize(&cellW, &cellH, &ascent);
-    if (cellW < 1) cellW = 1;
-    if (cellH < 1) cellH = 1;
-    const int pitch = cellH;
+static void DrawOverlay(int cursor, const U3LinuxOverlayMetrics *m) {
+    const short width = (short)m->width, height = (short)m->height;
+    const int cellW = m->cellWidth, ascent = m->ascent, cellH = m->cellHeight;
+    const int pitch = m->pitch;
 
     U3CocoaSetBackgroundQuickDrawColor(blackColor);
     U3CocoaEraseRect(0, 0, width, height);
@@ -376,10 +322,10 @@ static void DrawOverlay(int cursor) {
     const short valueColumn = (short)(indent + 16 * cellW);
     short y = (short)(4 + ascent);
 
-    OverlayText(left, y, "SETTINGS");
+    U3LinuxOverlayText(left, y, "SETTINGS");
     y = (short)(y + pitch);
     /* Deliberately terse: the long form did not fit 40 columns. */
-    OverlayText(left, y, "Up/Down  Left/Right change  Esc close");
+    U3LinuxOverlayText(left, y, "Up/Down  Left/Right change  Esc close");
     y = (short)(y + pitch);
 
     const char *section = NULL;
@@ -387,7 +333,7 @@ static void DrawOverlay(int cursor) {
         if (kRows[row].section && kRows[row].section != section) {
             section = kRows[row].section;
             U3CocoaSetForegroundQuickDrawColor(whiteColor);
-            OverlayText(left, y, section);
+            U3LinuxOverlayText(left, y, section);
             y = (short)(y + pitch);
         }
 
@@ -411,45 +357,28 @@ static void DrawOverlay(int cursor) {
          * widest value ("Original (640x384)"). */
         char marked[72];
         snprintf(marked, sizeof(marked), "%s%s", kRows[row].restartRequired ? "*" : " ", label);
-        OverlayText(indent, y, marked);
-        OverlayText(valueColumn, y, value);
+        U3LinuxOverlayText(indent, y, marked);
+        U3LinuxOverlayText(valueColumn, y, value);
         y = (short)(y + pitch);
     }
 
     U3CocoaSetForegroundQuickDrawColor(whiteColor);
-    OverlayText(left, y, "* takes effect on restart");
+    U3LinuxOverlayText(left, y, "* takes effect on restart");
 
     U3CocoaInvalidateMainSurface();
     U3CocoaPresentMainSurface();
 }
 
 void U3LinuxSettingsShow(void) {
-    U3Bitmap *bitmap = U3CocoaMainBitmap();
-    if (!bitmap || !bitmap->pixels)
+    U3Bitmap snapshot;
+    U3LinuxOverlayMetrics metrics;
+    if (!U3LinuxOverlayBegin(&snapshot, &metrics))
         return;
-
-    /* Save the screen so the game's own frame comes back untouched: the
-     * overlay paints over the live bitmap, and the game will not necessarily
-     * redraw everything on its next turn. */
-    U3Bitmap snapshot = {0};
-    bool haveSnapshot = false;
-    if (U3BitmapAllocate(&snapshot, bitmap->width, bitmap->height)) {
-        U3BitmapRect whole = {0, 0, bitmap->width, bitmap->height};
-        haveSnapshot = U3BitmapCopy(&snapshot, whole, bitmap, whole);
-    }
-
-    /* The game leaves its drawing state -- selected bitmap, colours, text size
-     * -- in place between turns and expects it back untouched. The overlay
-     * changes all three, so capture the one piece that cannot be inferred (the
-     * text size) and put it back at the end alongside the pixels. */
-    U3CocoaSelectBitmap(NULL, 0, 0);
-    int savedCellW = 16, savedCellH = 16, savedAscent = 13;
-    U3LinuxVideoTextCellSize(&savedCellW, &savedCellH, &savedAscent);
 
     int cursor = 0;
     for (;;) {
-        DrawOverlay(cursor);
-        char key = ReadKey();
+        DrawOverlay(cursor, &metrics);
+        char key = U3LinuxOverlayReadKey();
         if (key == 27 || key == 'q' || key == 'Q')
             break;
         switch (key) {
@@ -471,23 +400,20 @@ void U3LinuxSettingsShow(void) {
         }
     }
 
-    /* savedCellH is the rasterized cell, which for this font equals the size the
-     * game had asked for; restoring it leaves TextSize as the game left it. */
-    U3CocoaSetTextSize((short)savedCellH);
-    if (haveSnapshot) {
-        U3BitmapRect whole = {0, 0, bitmap->width, bitmap->height};
-        U3BitmapCopy(bitmap, whole, &snapshot, whole);
-    }
-    U3BitmapDispose(&snapshot);
-    U3CocoaInvalidateMainSurface();
-    U3CocoaPresentMainSurface();
+    U3LinuxOverlayEnd(&snapshot);
 }
 
 void U3LinuxSettingsDrawForTesting(int cursorRow) {
-    U3CocoaSelectBitmap(NULL, 0, 0);
-    DrawOverlay(cursorRow);
+    U3Bitmap snapshot;
+    U3LinuxOverlayMetrics metrics;
+    if (!U3LinuxOverlayBegin(&snapshot, &metrics))
+        return;
+    /* Leave the overlay on screen for the caller to capture; Show() restores
+     * the game's pixels before returning. */
+    U3BitmapDispose(&snapshot);
+    DrawOverlay(cursorRow, &metrics);
 }
 
 void U3LinuxSettingsInstall(void) {
-    U3LinuxVideoSetOverlayHandler(U3LinuxSettingsShow);
+    U3LinuxVideoSetOverlayHandler(U3LinuxVideoOverlaySettings, U3LinuxSettingsShow);
 }

@@ -11,6 +11,7 @@
 #include "Linux/U3LinuxPlatform.h"
 #include "Linux/U3LinuxVideo.h"
 #include "Linux/U3LinuxSettings.h"
+#include "Linux/U3LinuxReference.h"
 #include "Linux/U3LinuxAudio.h"
 #include "Linux/U3IOLinux.h"
 #include "Linux/U3LinuxCarbon.h"
@@ -265,6 +266,7 @@ static void PrintUsage(const char *prog) {
     fprintf(stdout, "  --no-crt                 Disable the CRT scanline filter\n");
     fprintf(stdout, "\nIn-game keys (settings are saved to the preferences file):\n");
     fprintf(stdout, "  F1                       Open the settings overlay\n");
+    fprintf(stdout, "  F2                       Open the command and spell reference card\n");
     fprintf(stdout, "  F11, Alt+Enter           Toggle fullscreen\n");
     fprintf(stdout, "  F10                      Toggle the CRT scanline filter\n");
     fprintf(stdout, "  F8                       Toggle smooth vs. whole-pixel scaling\n");
@@ -433,6 +435,7 @@ int main(int argc, char *argv[]) {
     }
     U3LinuxAudioConfigure(assetsDir, noAudio);
     U3LinuxSettingsInstall();
+    U3LinuxReferenceInstall(assets);
     U3LinuxCarbonConfigure(assetsDir);
     U3IOConfigure(assets);
 
@@ -454,6 +457,23 @@ int main(int argc, char *argv[]) {
             ok = U3CocoaWriteMainBitmap(settingsShot);
         }
         fprintf(stderr, "Settings overlay render: %s\n", ok ? "written" : "FAILED");
+        U3LinuxVideoShutdown();
+        U3LinuxAudioShutdown();
+        U3LinuxAssetsClose(assets);
+        return ok ? 0 : 1;
+    }
+
+    const char *referenceShot = getenv("U3_REFERENCE_CHECK");
+    if (referenceShot) {
+        bool small = U3PlatformGetBooleanPreference(U3PreferenceOriginalSize);
+        bool ok = U3CocoaCreateMainSurface(0, 0, small ? 640 : 1280,
+                                           small ? 384 : 768) != NULL;
+        if (ok) {
+            const char *pageText = getenv("U3_REFERENCE_PAGE");
+            U3LinuxReferenceDrawForTesting(pageText ? atoi(pageText) : 0);
+            ok = U3CocoaWriteMainBitmap(referenceShot);
+        }
+        fprintf(stderr, "Reference card render: %s\n", ok ? "written" : "FAILED");
         U3LinuxVideoShutdown();
         U3LinuxAudioShutdown();
         U3LinuxAssetsClose(assets);

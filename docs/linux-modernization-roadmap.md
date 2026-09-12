@@ -10,7 +10,7 @@ This document outlines architectural improvements, quality-of-life enhancements,
 | 2. Windowing & display | **Done**, plus text-size controls added on request |
 | 3. Audio & SoundFont discoverability | **Done** |
 | 4. Input & modern controls (gamepad) | Not started |
-| 5. Quality of life | Not started |
+| 5. Quality of life | Reference card **done**; save slots and quick save/load not started |
 | 6. Linux packaging & distribution | **Done**, except an untested Flatpak manifest |
 
 ---
@@ -274,7 +274,14 @@ per-artifact verification status.
 
 ## Not yet started
 
-Sections 4 (gamepad) and 5 (save slots, quick save/load, reference card).
+Section 4 (gamepad), and the rest of section 5 (multiple save slots, quick
+save/load, dungeon compass and auto-mapping).
+
+Section 5's **in-game spell and command reference card is done**: `F2` opens a
+three-page card (commands A-Z, wizard spells, cleric spells) built on the same
+overlay kit as the settings screen. Spell names are read from the game's own
+"Spells" table at the offsets `WizardChoose`/`ClericChoose` use, so they cannot
+drift from what is actually cast.
 
 Section 4 has a head start: `U3LinuxVideoRequestOverlay()` already exists so a
 gamepad Start button can open the settings overlay without duplicating the

@@ -104,8 +104,8 @@ static bool gPresentationOptionsLoaded = false;
  * U3CocoaPollKeyMouse. Running it where the key is handled would re-enter the
  * event pump: HandleSDLEvent is itself called from inside U3CocoaPollKeyMouse,
  * and the overlay polls for its own input. */
-static U3LinuxVideoOverlayHandler gOverlayHandler = NULL;
-static bool gOverlayRequested = false;
+static U3LinuxVideoOverlayHandler gOverlayHandlers[U3LinuxVideoOverlayKindCount];
+static int gOverlayRequested = -1; /* kind awaiting a safe point, or -1 */
 static bool gOverlayRunning = false;
 
 /* ---- Input ---- */
@@ -1010,11 +1010,14 @@ static bool HandleDisplayKey(const SDL_KeyboardEvent *key) {
         U3LinuxVideoSetFontScalePercent(gFontScalePercent + 25);
         return true;
     }
-    /* F1 only records the request; see gOverlayRequested. Swallowed either way,
-     * so the game never receives it as a command. */
+    /* F1 and F2 only record the request; see gOverlayRequested. Swallowed
+     * either way, so the game never receives them as commands. */
     if (sym == SDLK_F1) {
-        if (gOverlayHandler && !gOverlayRunning)
-            gOverlayRequested = true;
+        U3LinuxVideoRequestOverlay(U3LinuxVideoOverlaySettings);
+        return true;
+    }
+    if (sym == SDLK_F2) {
+        U3LinuxVideoRequestOverlay(U3LinuxVideoOverlayReference);
         return true;
     }
     return false;
@@ -1186,17 +1189,25 @@ void U3CocoaQueueDiagnosticMouse(short x, short y) {
     PushPendingFront(true, 0, x, y);
 }
 
-void U3LinuxVideoSetOverlayHandler(U3LinuxVideoOverlayHandler handler) {
-    gOverlayHandler = handler;
+void U3LinuxVideoSetOverlayHandler(U3LinuxVideoOverlayKind kind,
+                                   U3LinuxVideoOverlayHandler handler) {
+    if ((unsigned)kind < U3LinuxVideoOverlayKindCount)
+        gOverlayHandlers[kind] = handler;
+}
+
+void U3LinuxVideoSetReferenceHandler(U3LinuxVideoOverlayHandler handler) {
+    U3LinuxVideoSetOverlayHandler(U3LinuxVideoOverlayReference, handler);
 }
 
 bool U3LinuxVideoOverlayIsOpen(void) {
     return gOverlayRunning;
 }
 
-void U3LinuxVideoRequestOverlay(void) {
-    if (gOverlayHandler && !gOverlayRunning)
-        gOverlayRequested = true;
+void U3LinuxVideoRequestOverlay(U3LinuxVideoOverlayKind kind) {
+    if ((unsigned)kind >= U3LinuxVideoOverlayKindCount)
+        return;
+    if (gOverlayHandlers[kind] && !gOverlayRunning)
+        gOverlayRequested = (int)kind;
 }
 
 /* Run a pending overlay request, if this is a safe moment for it.
@@ -1207,11 +1218,14 @@ void U3LinuxVideoRequestOverlay(void) {
  * mid-prompt. The guard keeps the overlay's own input polling from re-entering
  * it. */
 static void RunPendingOverlay(void) {
-    if (!gOverlayRequested || gOverlayRunning || !gOverlayHandler)
+    if (gOverlayRequested < 0 || gOverlayRunning)
         return;
-    gOverlayRequested = false;
+    U3LinuxVideoOverlayHandler handler = gOverlayHandlers[gOverlayRequested];
+    gOverlayRequested = -1;
+    if (!handler)
+        return;
     gOverlayRunning = true;
-    gOverlayHandler();
+    handler();
     gOverlayRunning = false;
 }
 

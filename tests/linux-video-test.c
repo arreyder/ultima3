@@ -66,7 +66,7 @@ static void CountingOverlayHandler(void) {
     if (U3LinuxVideoOverlayIsOpen() == false)
         ++gOverlayReentered; /* should be reported as open while running */
     int before = gOverlayRuns;
-    U3LinuxVideoRequestOverlay(); /* refused while already running */
+    U3LinuxVideoRequestOverlay(U3LinuxVideoOverlaySettings); /* refused while already running */
     char key; Boolean isMouse;
     U3CocoaPollKeyMouse(true, 0, &key, &isMouse);
     if (gOverlayRuns != before)
@@ -457,8 +457,8 @@ int main(int argc, char **argv) {
      * part worth pinning: a handler that polls (as the real one does) must not
      * be able to launch a second copy of itself. */
     gOverlayRuns = 0;
-    U3LinuxVideoSetOverlayHandler(CountingOverlayHandler);
-    U3LinuxVideoRequestOverlay();
+    U3LinuxVideoSetOverlayHandler(U3LinuxVideoOverlaySettings, CountingOverlayHandler);
+    U3LinuxVideoRequestOverlay(U3LinuxVideoOverlaySettings);
     assert(!U3LinuxVideoOverlayIsOpen() && "a request alone must not open the overlay");
     { char k; Boolean m; U3CocoaPollKeyMouse(true, 0, &k, &m); }
     assert(gOverlayRuns == 1 && "the request should run once, at the next poll");
@@ -471,8 +471,8 @@ int main(int argc, char **argv) {
     { char k; Boolean m; U3CocoaPollKeyMouse(true, 0, &k, &m); }
     assert(gOverlayRuns == 1 && "a spent request does not run again");
 
-    U3LinuxVideoSetOverlayHandler(NULL);
-    U3LinuxVideoRequestOverlay();
+    U3LinuxVideoSetOverlayHandler(U3LinuxVideoOverlaySettings, NULL);
+    U3LinuxVideoRequestOverlay(U3LinuxVideoOverlaySettings);
     { char k; Boolean m; U3CocoaPollKeyMouse(true, 0, &k, &m); }
     assert(gOverlayRuns == 1 && "with no handler installed, nothing is invoked");
 
