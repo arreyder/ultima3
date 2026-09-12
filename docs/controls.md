@@ -39,6 +39,8 @@ From the repository root or build directory:
 | `--scale <1\|2>` | Window scale multiplier (default: `1`). |
 | `--classic` | Use classic Mac 1x appearance (640×384 canvas, text stats). |
 | `--modern` | Use modern appearance (character portraits, visual HP/Mana/Level bars, food gauges). |
+| `--speech` | Enable speech synthesis via Speech Dispatcher (spoken NPC dialogue and messages). |
+| `--no-speech` | Disable speech synthesis. |
 | `--no-audio` | Disable SDL audio output and FluidSynth MIDI playback. |
 | `--script <keys>` | Programmatically execute a sequence of turns/commands (for automated tests or headless agent control). |
 | `--screenshot <file>` | Capture the final rendered frame to a BMP or PNG file upon script completion. |

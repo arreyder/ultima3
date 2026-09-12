@@ -83,7 +83,7 @@ if(U3_BUILD_GAME_CORE)
     add_library(u3linux-audio STATIC Sources/Linux/U3LinuxAudio.c)
     target_include_directories(u3linux-audio PUBLIC Sources Sources/Linux
         "${U3_SYSROOT_INCLUDE_DIR}" "${U3_SYSROOT_ARCH_REAL_DIR}")
-    target_link_libraries(u3linux-audio PUBLIC u3bitmap "${U3_SDL2_LIBRARY}" "${U3_FLUIDSYNTH_LIBRARY}" "${U3_M_LIBRARY}")
+    target_link_libraries(u3linux-audio PUBLIC u3bitmap "${U3_SDL2_LIBRARY}" "${U3_FLUIDSYNTH_LIBRARY}" "${U3_M_LIBRARY}" "${CMAKE_DL_LIBS}")
     target_compile_options(u3linux-audio PRIVATE -Wall -Wextra -Werror)
 
     add_library(u3linux-carbon STATIC Sources/Linux/U3LinuxCarbon.c)
@@ -143,7 +143,7 @@ if(U3_BUILD_GAME_CORE)
 
         add_executable(u3-linux-audio-test tests/linux-audio-test.c)
         target_compile_options(u3-linux-audio-test PRIVATE -UNDEBUG)
-        target_link_libraries(u3-linux-audio-test PRIVATE u3linux-audio)
+        target_link_libraries(u3-linux-audio-test PRIVATE u3linux-audio u3linux-platform u3linux-carbon u3linux-assets)
         add_dependencies(u3-linux-audio-test u3assets)
         add_test(NAME linux-audio COMMAND u3-linux-audio-test "${CMAKE_CURRENT_BINARY_DIR}/assets")
         set_tests_properties(linux-audio PROPERTIES ENVIRONMENT "SDL_AUDIODRIVER=dummy")

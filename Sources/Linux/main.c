@@ -169,6 +169,8 @@ static void PrintUsage(const char *prog) {
     fprintf(stdout, "  --modern                 Use modern appearance with character portraits and status bars\n");
     fprintf(stdout, "\nAudio options:\n");
     fprintf(stdout, "  --no-audio               Disable audio playback\n");
+    fprintf(stdout, "  --speech                 Enable text-to-speech synthesis (Speech Dispatcher)\n");
+    fprintf(stdout, "  --no-speech              Disable text-to-speech synthesis\n");
     fprintf(stdout, "\nAsset options:\n");
     fprintf(stdout, "  --assets <dir>           Path to assets directory\n");
     fprintf(stdout, "\nAutomated test options:\n");
@@ -208,6 +210,12 @@ int main(int argc, char *argv[]) {
             modern = true;
         } else if (!strcmp(argv[i], "--no-audio")) {
             noAudio = true;
+        } else if (!strcmp(argv[i], "--speech")) {
+            setenv("U3_SPEECH", "1", 1);
+            unsetenv("U3_NO_SPEECH");
+        } else if (!strcmp(argv[i], "--no-speech")) {
+            setenv("U3_NO_SPEECH", "1", 1);
+            unsetenv("U3_SPEECH");
         } else if (!strcmp(argv[i], "--script") && i + 1 < argc) {
             setenv("U3_SCRIPT", argv[++i], 1);
         } else if (!strncmp(argv[i], "--script=", 9)) {
@@ -263,6 +271,11 @@ int main(int argc, char *argv[]) {
     } else if (modern) {
         U3PlatformSetBooleanPreference(U3PreferenceClassicAppearance, false);
     }
+    if (getenv("U3_NO_SPEECH")) {
+        U3PlatformSetBooleanPreference(U3PreferenceSpeechDisabled, true);
+    } else if (getenv("U3_SPEECH")) {
+        U3PlatformSetBooleanPreference(U3PreferenceSpeechDisabled, false);
+    }
     U3LinuxVideoConfigure(assets, "Ultima III", scale);
     U3LinuxAudioConfigure(assetsDir, noAudio);
     U3LinuxCarbonConfigure(assetsDir);
@@ -279,7 +292,7 @@ int main(int argc, char *argv[]) {
 
     if (getenv("U3_AUDIO_SELF_TEST")) {
         bool passed = U3AudioMusicSelfTest();
-        fprintf(stderr, "Music playback test: %s\n", passed ? "passed" : "FAILED");
+        fprintf(stderr, "Music self-test: %s\n", passed ? "passed" : "FAILED");
         U3LinuxVideoShutdown();
         U3LinuxAudioShutdown();
         U3LinuxAssetsClose(assets);
@@ -287,17 +300,11 @@ int main(int argc, char *argv[]) {
     }
 
     if (getenv("U3_RENDER_SELF_TEST")) {
-        Boolean passed = U3LegacyBitmapSelfTest();
-        fprintf(stderr, "Legacy bitmap test: %s\n", passed ? "passed" : "FAILED");
-        Boolean partyPassed = U3PartySelectionSelfTest();
-        fprintf(stderr, "Party selection test: %s\n", partyPassed ? "passed" : "FAILED");
-        passed = partyPassed && passed;
-        Boolean characterPassed = U3CharacterCreationSelfTest();
-        fprintf(stderr, "Character creation test: %s\n", characterPassed ? "passed" : "FAILED");
-        passed = characterPassed && passed;
-        Boolean imagesPassed = U3CocoaImageSelfTest();
-        fprintf(stderr, "Image decoding test: %s\n", imagesPassed ? "passed" : "FAILED");
-        passed = passed && imagesPassed;
+        bool passed = U3LegacyBitmapSelfTest() &&
+                      U3PartySelectionSelfTest() &&
+                      U3CharacterCreationSelfTest() &&
+                      U3CocoaImageSelfTest();
+        fprintf(stderr, "Render self-test: %s\n", passed ? "passed" : "FAILED");
         U3LinuxVideoShutdown();
         U3LinuxAudioShutdown();
         U3LinuxAssetsClose(assets);
@@ -305,17 +312,17 @@ int main(int argc, char *argv[]) {
     }
 
     int result = Ultima3_main();
+
     if (!getenv("U3_SKIP_APP_RUN") && !getenv("U3_STARTUP_RENDER_CHECK") &&
         !getenv("U3_BOOT_CHECK") && !getenv("U3_WORLD_RENDER_CHECK") &&
-        !getenv("U3_WORLD_INPUT_CHECK") && !getenv("U3_WORLD_MOUSE_CHECK")) {
+        !getenv("U3_WORLD_INPUT_CHECK") && !getenv("U3_WORLD_MOUSE_CHECK") &&
+        !getenv("U3_SCRIPT")) {
         U3CocoaRunApplication();
     }
 
     U3LinuxVideoShutdown();
     U3LinuxAudioShutdown();
-    if (assets) {
-        U3LinuxAssetsClose(assets);
-    }
+    U3LinuxAssetsClose(assets);
 
     return result;
 }
@@ -323,12 +330,11 @@ int main(int argc, char *argv[]) {
 #if defined(__has_feature)
 #if __has_feature(address_sanitizer)
 const char *__lsan_default_suppressions(void) {
-    return "leak:libfluidsynth\nleak:libglib\nleak:libgobject\nleak:libinstpatch\n";
+    return "leak:libfluidsynth\nleak:libglib\nleak:libgobject\nleak:libinstpatch\nleak:libspeechd\n";
 }
 #endif
 #elif defined(__SANITIZE_ADDRESS__)
 const char *__lsan_default_suppressions(void) {
-    return "leak:libfluidsynth\nleak:libglib\nleak:libgobject\nleak:libinstpatch\n";
+    return "leak:libfluidsynth\nleak:libglib\nleak:libgobject\nleak:libinstpatch\nleak:libspeechd\n";
 }
 #endif
-

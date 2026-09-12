@@ -81,6 +81,7 @@ static void TestUnconfiguredIsSafe(void) {
     U3AudioStopMusic();
     U3AudioApplyPreferences();
     U3AudioSetUpSpeech();
+    U3AudioSpeakText("Test", 0);
     U3AudioSpeakMessages(1, 0, 0);
     U3AudioSpeakPascalString((uint8_t *)"\x00", 0);
     U3AudioCloseMusic();
@@ -238,12 +239,12 @@ int main(int argc, char **argv) {
 #if defined(__has_feature)
 #if __has_feature(address_sanitizer)
 const char *__lsan_default_suppressions(void) {
-    return "leak:libfluidsynth\nleak:libglib\nleak:libgobject\nleak:libinstpatch\n";
+    return "leak:libfluidsynth\nleak:libglib\nleak:libgobject\nleak:libinstpatch\nleak:libspeechd\n";
 }
 #endif
 #elif defined(__SANITIZE_ADDRESS__)
 const char *__lsan_default_suppressions(void) {
-    return "leak:libfluidsynth\nleak:libglib\nleak:libgobject\nleak:libinstpatch\n";
+    return "leak:libfluidsynth\nleak:libglib\nleak:libgobject\nleak:libinstpatch\nleak:libspeechd\n";
 }
 #endif
 
