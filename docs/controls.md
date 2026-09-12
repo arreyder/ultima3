@@ -56,7 +56,7 @@ From the repository root or build directory:
 | `--assets <dir>` | Explicit path to the exported `assets/` directory. Otherwise discovered automatically (see [Asset discovery](#asset-discovery)). |
 | `-h`, `--help` | Print command usage and exit immediately without initializing video. |
 
-### Display Keys
+### In-Game Keys
 
 Handled by the window layer, not the game, so they never shadow an Ultima III
 command. Each one saves its new state to `~/.config/ultima3/preferences.conf`,
@@ -64,6 +64,7 @@ so a choice made in-game persists the same way the CLI flags do.
 
 | Key | Action |
 |---|---|
+| `F1` | Open the settings overlay. |
 | `F11`, `Alt`+`Enter` | Toggle desktop fullscreen. |
 | `F10` | Toggle the CRT scanline filter. |
 | `F8` | Toggle smooth vs. whole-pixel scaling. |
@@ -72,6 +73,30 @@ so a choice made in-game persists the same way the CLI flags do.
 The window is freely resizable. Dragging it re-letterboxes the game live,
 preserving its 5:3 aspect ratio; shrinking it below 640×384 scales the whole
 screen down rather than cropping it.
+
+### Settings overlay
+
+Press **`F1`** at any point where the game is waiting for input. The overlay
+replaces the macOS menu bar, which SDL has no equivalent of — before it, these
+options could only be set with command-line flags before launch.
+
+Navigate with **Up/Down**, change a setting with **Left/Right** (or `Enter` to
+toggle), and close with **`Esc`**. Every change is written to
+`~/.config/ultima3/preferences.conf` immediately.
+
+| Group | Settings |
+|---|---|
+| Display | Appearance, tile size, full screen, scaling, CRT scanlines, text size |
+| Audio | Sound effects and volume, music and volume, speech |
+| Gameplay | Speed limiter, auto-heal, diagonal moves, auto-save, combat mode |
+
+Everything takes effect immediately except **Appearance** and **Tile size**,
+marked `*` in the overlay: the game rebuilds its offscreen worlds for those at
+startup, and tearing those down mid-turn is not safe, so they apply at the next
+launch.
+
+The overlay draws into the game's own screen, so it is scaled, letterboxed and
+CRT-filtered exactly like the game and appears in screenshots.
 
 ### Text size
 

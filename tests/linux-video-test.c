@@ -55,6 +55,24 @@ bool U3ValidateCharacterDraft(const U3CharacterDraft *draft) {
     return total <= 50;
 }
 
+/* Overlay-seam probe. The real handler polls for its own input, so this one
+ * does too: that is exactly the path that would re-enter the handler if the
+ * guard in RunPendingOverlay were missing. */
+static int gOverlayRuns = 0;
+static int gOverlayReentered = 0;
+
+static void CountingOverlayHandler(void) {
+    ++gOverlayRuns;
+    if (U3LinuxVideoOverlayIsOpen() == false)
+        ++gOverlayReentered; /* should be reported as open while running */
+    int before = gOverlayRuns;
+    U3LinuxVideoRequestOverlay(); /* refused while already running */
+    char key; Boolean isMouse;
+    U3CocoaPollKeyMouse(true, 0, &key, &isMouse);
+    if (gOverlayRuns != before)
+        ++gOverlayReentered;
+}
+
 static void MakePascal(unsigned char *out, const char *ascii) {
     size_t length = strlen(ascii);
     if (length > 15) length = 15;
@@ -429,6 +447,34 @@ int main(int argc, char **argv) {
     free(frame);
     fprintf(stderr, "scanline filter verified at %dx (%d of %d rows darkened)\n",
             factor, darkRows, frameH);
+
+    /* ---- Settings overlay seam ----
+     *
+     * F1 records a request; the handler runs later, from inside
+     * U3CocoaPollKeyMouse. Running it where the key is handled would re-enter
+     * the event pump, since HandleSDLEvent is called from within that same
+     * poll and the overlay polls for its own input. The re-entry guard is the
+     * part worth pinning: a handler that polls (as the real one does) must not
+     * be able to launch a second copy of itself. */
+    gOverlayRuns = 0;
+    U3LinuxVideoSetOverlayHandler(CountingOverlayHandler);
+    U3LinuxVideoRequestOverlay();
+    assert(!U3LinuxVideoOverlayIsOpen() && "a request alone must not open the overlay");
+    { char k; Boolean m; U3CocoaPollKeyMouse(true, 0, &k, &m); }
+    assert(gOverlayRuns == 1 && "the request should run once, at the next poll");
+    assert(!U3LinuxVideoOverlayIsOpen() && "the overlay is closed again afterwards");
+    assert(gOverlayReentered == 0 &&
+           "polling from inside the handler must not re-enter it");
+
+    /* Without a pending request nothing runs, and a request made while the
+     * handler is running is refused rather than queued forever. */
+    { char k; Boolean m; U3CocoaPollKeyMouse(true, 0, &k, &m); }
+    assert(gOverlayRuns == 1 && "a spent request does not run again");
+
+    U3LinuxVideoSetOverlayHandler(NULL);
+    U3LinuxVideoRequestOverlay();
+    { char k; Boolean m; U3CocoaPollKeyMouse(true, 0, &k, &m); }
+    assert(gOverlayRuns == 1 && "with no handler installed, nothing is invoked");
 
     U3CocoaPresentMainSurface();
     U3CocoaPumpEvents();

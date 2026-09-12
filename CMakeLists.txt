@@ -109,12 +109,23 @@ if(U3_BUILD_GAME_CORE)
         "${U3_SDL2_LIBRARY}")
     target_compile_options(u3linux-video PRIVATE -Wall -Wextra -Werror -fpascal-strings)
 
+    # Settings overlay. Sits above the adapter modules and composes them, so it
+    # links against video (display options and the drawing primitives), platform
+    # (preferences) and audio (applying a volume change) rather than any of them
+    # depending on it.
+    add_library(u3linux-settings STATIC Sources/Linux/U3LinuxSettings.c)
+    target_include_directories(u3linux-settings PUBLIC Sources Sources/Linux
+        "${U3_SYSROOT_INCLUDE_DIR}" "${U3_SYSROOT_ARCH_REAL_DIR}")
+    target_link_libraries(u3linux-settings PUBLIC u3linux-video u3linux-platform u3linux-audio)
+    target_compile_options(u3linux-settings PRIVATE -Wall -Wextra -Werror -fpascal-strings)
+
     add_executable(ultima3 Sources/Linux/main.c)
     target_include_directories(ultima3 PRIVATE Sources Sources/Linux
         "${U3_SYSROOT_INCLUDE_DIR}" "${U3_SYSROOT_ARCH_REAL_DIR}")
     target_compile_options(ultima3 PRIVATE -fpascal-strings)
     target_link_libraries(ultima3 PRIVATE
         u3game-core
+        u3linux-settings
         u3linux-video
         u3linux-carbon
         u3linux-platform
@@ -198,6 +209,15 @@ if(U3_BUILD_GAME_CORE)
         target_link_libraries(u3-linux-carbon-test PRIVATE u3linux-carbon)
         add_dependencies(u3-linux-carbon-test u3assets)
         add_test(NAME linux-carbon COMMAND u3-linux-carbon-test "${CMAKE_CURRENT_BINARY_DIR}/assets")
+
+        add_executable(u3-linux-settings-test tests/linux-settings-test.c)
+        target_compile_options(u3-linux-settings-test PRIVATE -UNDEBUG -fpascal-strings)
+        target_link_libraries(u3-linux-settings-test PRIVATE u3linux-settings)
+        add_dependencies(u3-linux-settings-test u3assets)
+        add_test(NAME linux-settings COMMAND u3-linux-settings-test "${CMAKE_CURRENT_BINARY_DIR}/assets")
+        # Isolated preferences: this test writes every setting it checks.
+        set_tests_properties(linux-settings PROPERTIES ENVIRONMENT
+            "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;U3_SAVE_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/test-prefs-settings")
 
         add_executable(u3-linux-video-test tests/linux-video-test.c)
         target_include_directories(u3-linux-video-test PRIVATE "${U3_SYSROOT_INCLUDE_DIR}")

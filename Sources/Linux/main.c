@@ -10,6 +10,7 @@
 #include "Linux/U3LinuxAssets.h"
 #include "Linux/U3LinuxPlatform.h"
 #include "Linux/U3LinuxVideo.h"
+#include "Linux/U3LinuxSettings.h"
 #include "Linux/U3LinuxAudio.h"
 #include "Linux/U3IOLinux.h"
 #include "Linux/U3LinuxCarbon.h"
@@ -262,7 +263,8 @@ static void PrintUsage(const char *prog) {
     fprintf(stdout, "                           For larger text use --double-size; see docs/controls.md\n");
     fprintf(stdout, "  --crt                    Enable the CRT scanline filter\n");
     fprintf(stdout, "  --no-crt                 Disable the CRT scanline filter\n");
-    fprintf(stdout, "\nDisplay keys (also saved to the preferences file):\n");
+    fprintf(stdout, "\nIn-game keys (settings are saved to the preferences file):\n");
+    fprintf(stdout, "  F1                       Open the settings overlay\n");
     fprintf(stdout, "  F11, Alt+Enter           Toggle fullscreen\n");
     fprintf(stdout, "  F10                      Toggle the CRT scanline filter\n");
     fprintf(stdout, "  F8                       Toggle smooth vs. whole-pixel scaling\n");
@@ -430,8 +432,33 @@ int main(int argc, char *argv[]) {
         U3LinuxVideoSetFontScalePercent(fontScale);
     }
     U3LinuxAudioConfigure(assetsDir, noAudio);
+    U3LinuxSettingsInstall();
     U3LinuxCarbonConfigure(assetsDir);
     U3IOConfigure(assets);
+
+    /* Renders the settings overlay on its own, without booting the game, so the
+     * thing the player sees can be captured and reviewed. The overlay normally
+     * restores the screen before returning, which would leave a screenshot
+     * showing everything except the overlay. */
+    const char *settingsShot = getenv("U3_SETTINGS_CHECK");
+    if (settingsShot) {
+        /* Size the canvas the way the game would, from the tile-size
+         * preference, so the check exercises the overlay at whichever scale is
+         * actually configured rather than only the small one. */
+        bool small = U3PlatformGetBooleanPreference(U3PreferenceOriginalSize);
+        bool ok = U3CocoaCreateMainSurface(0, 0, small ? 640 : 1280,
+                                           small ? 384 : 768) != NULL;
+        if (ok) {
+            const char *rowText = getenv("U3_SETTINGS_ROW");
+            U3LinuxSettingsDrawForTesting(rowText ? atoi(rowText) : 0);
+            ok = U3CocoaWriteMainBitmap(settingsShot);
+        }
+        fprintf(stderr, "Settings overlay render: %s\n", ok ? "written" : "FAILED");
+        U3LinuxVideoShutdown();
+        U3LinuxAudioShutdown();
+        U3LinuxAssetsClose(assets);
+        return ok ? 0 : 1;
+    }
 
     if (getenv("U3_IO_SELF_TEST")) {
         bool passed = U3IOSelfTest();

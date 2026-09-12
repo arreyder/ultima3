@@ -28,3 +28,8 @@ void U3LinuxSpeechSpeak(const char *text, int16_t voiceID, const char *voiceName
 void U3LinuxSpeechCancel(void);
 void U3LinuxSpeechShutdown(void);
 const char *U3LinuxSpeechGetActiveEngineName(void);
+
+/* Re-reads U3PreferenceSpeechDisabled and starts or silences the engine to
+ * match, so a runtime toggle (the settings overlay) takes effect at once
+ * instead of at the next launch. Safe to call repeatedly. */
+void U3LinuxSpeechRefreshFromPreferences(void);

@@ -38,6 +38,10 @@ static char sPiperBinary[512] = {0};
 static char sPiperMaleModel[512] = {0};
 static char sPiperFemaleModel[512] = {0};
 static bool sInitialized = false;
+/* Kept so the engine can be brought up later, if speech was disabled by
+ * preference at startup and the player turns it on from the settings
+ * overlay. Init is otherwise the only thing that sees the assets path. */
+static char sAssetsDir[512] = {0};
 
 /* --------------------------------------------------------------------------
  * Speech Dispatcher (libspeechd) Types & State
@@ -379,6 +383,9 @@ void U3LinuxSpeechInit(const char *assetsDir) {
     if (sInitialized)
         return;
     sInitialized = true;
+    if (assetsDir && assetsDir != sAssetsDir) {
+        snprintf(sAssetsDir, sizeof(sAssetsDir), "%s", assetsDir);
+    }
 
     if (U3PlatformGetBooleanPreference && U3PlatformGetBooleanPreference(U3PreferenceSpeechDisabled)) {
         sActiveEngine = U3SpeechEngineNone;
@@ -533,6 +540,32 @@ void U3LinuxSpeechShutdown(void) {
     }
     sActiveEngine = U3SpeechEngineNone;
     sInitialized = false;
+}
+
+/* Re-reads the speech preference and brings the engine up or silences it to
+ * match, so the settings overlay's Speech toggle takes effect immediately
+ * rather than at the next launch.
+ *
+ * Turning speech off only stops and clears the active engine; the worker
+ * thread, if one is running, is left idle rather than torn down, so toggling
+ * back and forth does not repeatedly create and join threads. Turning it on
+ * re-runs detection, which is safe to repeat: StartWorkerThread is guarded,
+ * and the disabled path returns before acquiring anything.
+ */
+void U3LinuxSpeechRefreshFromPreferences(void) {
+    bool disabled = U3PlatformGetBooleanPreference &&
+                    U3PlatformGetBooleanPreference(U3PreferenceSpeechDisabled);
+    if (disabled) {
+        if (sActiveEngine != U3SpeechEngineNone) {
+            U3LinuxSpeechCancel();
+            sActiveEngine = U3SpeechEngineNone;
+        }
+        return;
+    }
+    if (sActiveEngine == U3SpeechEngineNone) {
+        sInitialized = false;
+        U3LinuxSpeechInit(sAssetsDir);
+    }
 }
 
 const char *U3LinuxSpeechGetActiveEngineName(void) {

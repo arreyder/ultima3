@@ -94,6 +94,20 @@ static bool gScanlines = false;
 static int gFontScalePercent = 100;
 static bool gPresentationOptionsLoaded = false;
 
+/* Settings overlay seam. The overlay lives above this file (it also drives
+ * audio, which this layer knows nothing about), so it registers a handler
+ * instead of being called directly -- the same arrangement U3LinuxPlatform.h
+ * uses for its input source, and for the same reason: it keeps the dependency
+ * one-way.
+ *
+ * The request is recorded when the key arrives but run later, from
+ * U3CocoaPollKeyMouse. Running it where the key is handled would re-enter the
+ * event pump: HandleSDLEvent is itself called from inside U3CocoaPollKeyMouse,
+ * and the overlay polls for its own input. */
+static U3LinuxVideoOverlayHandler gOverlayHandler = NULL;
+static bool gOverlayRequested = false;
+static bool gOverlayRunning = false;
+
 /* ---- Input ---- */
 static U3PendingInput gPending[U3_PENDING_CAPACITY];
 static int gPendingHead = 0, gPendingCount = 0;
@@ -728,6 +742,14 @@ bool U3LinuxVideoScanlines(void) {
     return gScanlines;
 }
 
+void U3LinuxVideoTextCellSize(int *outWidth, int *outHeight, int *outAscent) {
+    int cellW = 0, cellH = 0, ascent = 0;
+    GetFontMetrics(&cellW, &cellH, &ascent);
+    if (outWidth) *outWidth = cellW;
+    if (outHeight) *outHeight = cellH;
+    if (outAscent) *outAscent = ascent;
+}
+
 void U3LinuxVideoPresentationRectForTesting(int windowWidth, int windowHeight,
                                             int bitmapWidth, int bitmapHeight,
                                             int *outX, int *outY, int *outW, int *outH) {
@@ -988,6 +1010,13 @@ static bool HandleDisplayKey(const SDL_KeyboardEvent *key) {
         U3LinuxVideoSetFontScalePercent(gFontScalePercent + 25);
         return true;
     }
+    /* F1 only records the request; see gOverlayRequested. Swallowed either way,
+     * so the game never receives it as a command. */
+    if (sym == SDLK_F1) {
+        if (gOverlayHandler && !gOverlayRunning)
+            gOverlayRequested = true;
+        return true;
+    }
     return false;
 }
 
@@ -1157,12 +1186,42 @@ void U3CocoaQueueDiagnosticMouse(short x, short y) {
     PushPendingFront(true, 0, x, y);
 }
 
+void U3LinuxVideoSetOverlayHandler(U3LinuxVideoOverlayHandler handler) {
+    gOverlayHandler = handler;
+}
+
+bool U3LinuxVideoOverlayIsOpen(void) {
+    return gOverlayRunning;
+}
+
+void U3LinuxVideoRequestOverlay(void) {
+    if (gOverlayHandler && !gOverlayRunning)
+        gOverlayRequested = true;
+}
+
+/* Run a pending overlay request, if this is a safe moment for it.
+ *
+ * Called from U3CocoaPollKeyMouse, which is where the game has finished a turn
+ * and is waiting for the player -- the one point at which taking over the
+ * screen and the keyboard cannot interrupt a half-drawn frame or a command
+ * mid-prompt. The guard keeps the overlay's own input polling from re-entering
+ * it. */
+static void RunPendingOverlay(void) {
+    if (!gOverlayRequested || gOverlayRunning || !gOverlayHandler)
+        return;
+    gOverlayRequested = false;
+    gOverlayRunning = true;
+    gOverlayHandler();
+    gOverlayRunning = false;
+}
+
 Boolean U3CocoaPollKeyMouse(Boolean includeMouse, long timeoutTicks, char *outKey,
                             Boolean *outMouse) {
     if (outMouse)
         *outMouse = false;
     if (outKey)
         *outKey = 0;
+    RunPendingOverlay();
     if (gHeadlessDiagnostic) {
         if (gDiagMousePending) {
             gDiagMousePending = false;

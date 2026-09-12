@@ -115,3 +115,46 @@ bool U3LinuxVideoReadFrameForTesting(uint8_t *rgba, size_t capacity,
  * repaint so a change does not leave half the screen at the old size. */
 void U3LinuxVideoSetFontScalePercent(int percent);
 int U3LinuxVideoFontScalePercent(void);
+
+/* ---------------------------------------------------------------------
+ * Settings overlay seam
+ *
+ * The in-game settings overlay is not implemented here: it also reads and
+ * applies audio preferences, and this layer deliberately knows nothing about
+ * audio. It registers itself instead, the same way U3LinuxPlatform.h takes an
+ * input source, so the dependency stays one-way (settings -> video, never
+ * back).
+ *
+ * F1 requests the overlay. The handler is not called from the key handler
+ * though: it runs from inside U3CocoaPollKeyMouse, at the point where the game
+ * is idle waiting for the player. That is both the only safe moment to take
+ * over the screen -- no half-drawn frame, no command mid-prompt -- and the only
+ * way to avoid re-entering the SDL event pump, since the key handler is itself
+ * called from within the poll and the overlay polls for its own input.
+ * ------------------------------------------------------------------- */
+typedef void (*U3LinuxVideoOverlayHandler)(void);
+
+/* Installs the overlay handler, or NULL to disable F1 entirely. Call once at
+ * startup. Without a handler, F1 is still swallowed rather than reaching the
+ * game as a command. */
+void U3LinuxVideoSetOverlayHandler(U3LinuxVideoOverlayHandler handler);
+
+/* Requests the overlay as if F1 had been pressed; it opens at the next safe
+ * point. Lets other input sources (a gamepad Start button, a menu item) open
+ * it without duplicating the deferral rules above. */
+void U3LinuxVideoRequestOverlay(void);
+
+/* True while the handler is running. The overlay draws into the game's own
+ * bitmap, so anything that would otherwise repaint the screen underneath it
+ * can use this to hold off. */
+bool U3LinuxVideoOverlayIsOpen(void);
+
+/* Cell width, cell height and baseline ascent, in pixels, that the built-in
+ * bitmap font currently rasterizes at -- i.e. after both the size the game last
+ * asked for via TextSize() and the player's font scale.
+ *
+ * Dialogs drawn into the game bitmap need this to lay themselves out. Without
+ * it they can only assume a 16px cell, which is wrong whenever the font scale
+ * is not 100% or the caller inherited a different TextSize, and an assumed cell
+ * that is too small silently overflows the screen edge. */
+void U3LinuxVideoTextCellSize(int *outWidth, int *outHeight, int *outAscent);

@@ -6,7 +6,7 @@ This document outlines architectural improvements, quality-of-life enhancements,
 
 | Section | State |
 |---|---|
-| 1. In-game settings overlay | Not started — the preference storage it needs is in place |
+| 1. In-game settings overlay | **Done** |
 | 2. Windowing & display | **Done**, plus text-size controls added on request |
 | 3. Audio & SoundFont discoverability | **Done** |
 | 4. Input & modern controls (gamepad) | Not started |
@@ -28,6 +28,51 @@ On macOS, the game uses the native AppKit menu bar to toggle Audio, Music, Speec
   - **Speech**: Speech engine selection (`piper`, `speechd`, `cmd`, `off`), Voice selection, Speech volume/rate.
   - **Gameplay / QoL**: Turn pacing delay (0–1000ms), Auto-heal on/off, Speed limiter.
 - Persist settings to `~/.config/ultima3/preferences.conf` on change.
+
+### Outcome — done
+
+`F1` opens a modal overlay, implemented in `Sources/Linux/U3LinuxSettings.{c,h}`
+with 16 settings across Display, Audio and Gameplay. Up/Down selects,
+Left/Right changes, Esc closes, and every change is persisted immediately.
+
+Notes on how it is built, and why:
+
+- **It is a new module, not part of `U3LinuxVideo.c`.** The overlay composes the
+  adapter layers — preferences, display options, and `U3AudioApplyPreferences`
+  — so it sits above them. Putting it in the video layer would have made that
+  layer depend on audio, which it otherwise knows nothing about.
+- **Video reaches it through a registered handler**, the same seam
+  `U3LinuxPlatform.h` uses for its input source, keeping the dependency
+  one-way.
+- **F1 does not open it where the key is handled.** `HandleSDLEvent` is called
+  from inside `U3CocoaPollKeyMouse`, and the overlay polls for its own input, so
+  running it there re-enters the event pump. The key records a request and
+  `RunPendingOverlay()` runs it from the top of the next poll — which is also
+  the only point at which taking over the screen cannot interrupt a half-drawn
+  frame or a command mid-prompt. A guard stops the overlay's own polling from
+  launching a second copy of itself; the video test pins this.
+- **It draws into the game's own bitmap**, like the existing party-selection and
+  character-creation dialogs, so it inherits scaling, letterboxing, the CRT
+  filter and screenshots with no second presentation path to keep in step.
+- **Appearance and tile size are marked "restart".** The game rebuilds its
+  offscreen worlds for those (`AdaptToWindow`), which is not safe to do from
+  inside an input poll. They still write their preference, so the setting is
+  never silently inert — the test pins that too.
+
+Two fixes fell out of building it:
+
+- The overlay first laid itself out on an assumed 16px glyph cell and ran off
+  the right and bottom edges, because the game leaves `TextSize()` wherever its
+  last draw put it and the font scale applies on top. `U3LinuxVideoTextCellSize()`
+  now reports the real rasterized metrics and the layout measures instead.
+- Speech read `U3PreferenceSpeechDisabled` only once, at init, so toggling it
+  did nothing until the next launch.
+  `U3LinuxSpeechRefreshFromPreferences()` makes it live in both directions.
+
+Not included: speech engine and voice selection, which are configured by
+`U3_SPEECH_ENGINE` / `--speech-engine` and have no preference key behind them
+yet, and the turn-pacing delay, which is a diagnostic environment variable
+rather than a stored setting.
 
 ---
 
@@ -229,9 +274,9 @@ per-artifact verification status.
 
 ## Not yet started
 
-Sections 1, 4 and 5. Section 1's persistence layer is already in place
-(`~/.config/ultima3/preferences.conf` via `U3LinuxPlatform.c`), and the display
-toggles it would expose now exist as real API
-(`U3LinuxVideoSetSmoothScaling`, `U3LinuxVideoSetScanlines`,
-`U3CocoaSetMainSurfaceFullScreen`) rather than only as hotkeys, so an overlay
-can drive them directly.
+Sections 4 (gamepad) and 5 (save slots, quick save/load, reference card).
+
+Section 4 has a head start: `U3LinuxVideoRequestOverlay()` already exists so a
+gamepad Start button can open the settings overlay without duplicating the
+deferral rules, and the overlay itself is the natural home for any controller
+options.
