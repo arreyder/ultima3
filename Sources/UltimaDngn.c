@@ -243,6 +243,19 @@ int U3DungeonTraversalSelfTest(void) {
         passed &= DungeonTextSnapshot(mode, "before");
         DungeonStart(1);
         passed &= GetXYDng(xpos, ypos) == 8 && DungeonTextSnapshot(mode, "after");
+        /* Both snapshots above are taken with no torch, where DrawDungeon
+         * clears the view by design -- so on their own they never exercise the
+         * wall, ladder and chest drawing at all, and a dungeon view that
+         * rendered nothing would look exactly the same. Light one and capture
+         * the drawn view too. */
+        gTorch = 10;
+        DrawDungeon();
+        passed &= DungeonTextSnapshot(mode, "lit");
+        /* Put the dark view back before the next appearance runs, or its
+         * "before" snapshot would still be showing this one's lit pixels --
+         * U3RenderClearBottom only clears the message area, not the view. */
+        gTorch = 0;
+        DrawDungeon();
     }
     U3PlatformSetBooleanPreference(U3PreferenceClassicAppearance, savedClassic);
     SetUpFont();

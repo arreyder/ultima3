@@ -230,6 +230,15 @@ if(U3_BUILD_GAME_CORE)
         set_tests_properties(linux-video PROPERTIES ENVIRONMENT
             "SDL_VIDEODRIVER=dummy;U3_SAVE_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/test-prefs-video")
 
+        # An unlit dungeon is black by design, so a broken dungeon renderer
+        # would look exactly like a missing torch. This drives the game's own
+        # dungeon snapshots and compares the lit view against the unlit one.
+        add_test(NAME dungeon-render COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/dungeon-render-check.py"
+            "$<TARGET_FILE:ultima3>"
+            "${CMAKE_CURRENT_BINARY_DIR}/assets"
+            "${CMAKE_CURRENT_BINARY_DIR}/dungeon-render")
+
         add_test(NAME linux-boot-render COMMAND ultima3)
         set_tests_properties(linux-boot-render PROPERTIES ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;U3_ASSETS_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/assets;U3_STARTUP_RENDER_CHECK=${CMAKE_CURRENT_BINARY_DIR}/test-startup.bmp")
     endif()
