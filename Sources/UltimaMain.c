@@ -302,10 +302,25 @@ void MainLoop(void) {
         getenv("U3_SCRIPT")) {
         U3CharacterDraft draft = {{'A', 'd', 'a'}, {15, 15, 10, 10}, 'H', 'F', 'F'};
         short slot = 1;
-        while (slot <= 20 && Player[slot][0]) ++slot;
-        Boolean stored = slot <= 20 && StoreCreatedCharacter(slot, &draft);
-        if (stored)
+        while (slot <= 20 && Player[slot][0]) {
+            if (!memcmp(Player[slot], "Ada", 3)) {
+                memset(Player[slot], 0, sizeof(Player[slot]));
+                break;
+            }
+            ++slot;
+        }
+        if (slot > 20) {
+            slot = 20;
+            memset(Player[slot], 0, sizeof(Player[slot]));
+        }
+        Boolean stored = StoreCreatedCharacter(slot, &draft);
+        if (stored) {
+            for (int i = 1; i <= 20; ++i) {
+                if (Player[i][0] && Player[i][16])
+                    Player[i][16] = 0;
+            }
             memset(Party, 0, sizeof(Party));
+        }
         Boolean formed = stored && (getenv("U3_PARTY_FLOW_CHECK") ?
             U3StorePartySelection((short[4]){slot, 0, 0, 0}) :
             U3ApplyPartySelection((short[4]){slot, 0, 0, 0}));
