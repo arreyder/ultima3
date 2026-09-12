@@ -1517,10 +1517,28 @@ void Game(void) {
             }
             fprintf(stderr, "Script completed: %u turns, pos=(%d,%d) map=%d\n",
                     diagnosticTurns, xpos, ypos, (int)Party[3]);
-            gDone = TRUE;
-            return;
+            if (getenv("U3_KEEP_ALIVE")) {
+                fprintf(stderr, "\n=== Automated demonstration finished! You now have control of the party. ===\n");
+                unsetenv("U3_SCRIPT");
+            } else {
+                gDone = TRUE;
+                return;
+            }
         }
         if (script && !diagnosticInputQueued) {
+            int stepDelay = 0;
+            const char *delayStr = getenv("U3_STEP_DELAY_MS");
+            if (delayStr) {
+                stepDelay = atoi(delayStr);
+            } else if (!getenv("SDL_VIDEODRIVER")) {
+                stepDelay = 400;
+            }
+            if (stepDelay > 0) {
+                U3CocoaPresentMainSurface();
+                U3PlatformWaitTicks((stepDelay * 60 + 500) / 1000);
+                U3CocoaPumpEvents();
+            }
+
             char nextKey = script[diagnosticTurns];
             fprintf(stderr, "Script turn %u: executing '%c' at (%d,%d)\n",
                     diagnosticTurns + 1, nextKey, xpos, ypos);

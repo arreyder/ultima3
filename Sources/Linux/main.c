@@ -128,7 +128,8 @@ static const char *FindAssetsDirectory(int argc, char **argv) {
 
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--script") || !strcmp(argv[i], "--scale") ||
-            !strcmp(argv[i], "--screenshot") || !strcmp(argv[i], "--assets")) {
+            !strcmp(argv[i], "--screenshot") || !strcmp(argv[i], "--assets") ||
+            !strcmp(argv[i], "--step-delay")) {
             ++i;
             continue;
         }
@@ -211,6 +212,12 @@ int main(int argc, char *argv[]) {
             setenv("U3_SCREENSHOT", argv[++i], 1);
         } else if (!strncmp(argv[i], "--screenshot=", 13)) {
             setenv("U3_SCREENSHOT", argv[i] + 13, 1);
+        } else if (!strcmp(argv[i], "--step-delay") && i + 1 < argc) {
+            setenv("U3_STEP_DELAY_MS", argv[++i], 1);
+        } else if (!strncmp(argv[i], "--step-delay=", 13)) {
+            setenv("U3_STEP_DELAY_MS", argv[i] + 13, 1);
+        } else if (!strcmp(argv[i], "--keep-alive")) {
+            setenv("U3_KEEP_ALIVE", "1", 1);
         }
     }
 
