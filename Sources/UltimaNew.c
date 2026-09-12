@@ -817,6 +817,10 @@ void SetUpDisplayDialog(void) {
         SetUpDisplay();
 }
 
+#ifdef U3_LINUX
+void SetUpDisplay(void) { U3CocoaSetMainSurfaceFullScreen(true); }
+void RestoreDisplay(void) { U3CocoaSetMainSurfaceFullScreen(false); }
+#else
 void SetUpDisplay(void) {
     if (!U3PlatformGetBooleanPreference(U3PreferenceNoEducateAboutFullScreen)) {
         ResetCursor();
@@ -895,6 +899,8 @@ void RestoreDisplay(void) {
     MoveWindow(gMainWindow, savx, savy, false);
     ForceOnScreen(gMainWindow);
 }
+
+#endif
 
 void AdaptToWindow(Boolean forceOnScreen) {
     Boolean doubleSize = !U3PlatformGetBooleanPreference(U3PreferenceOriginalSize);

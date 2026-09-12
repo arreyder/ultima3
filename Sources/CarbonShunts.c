@@ -50,6 +50,10 @@ void LWSetDialogPort(DialogPtr theDialog) {
 }
 
 void LWGetScreenRect(Rect *rect) {
+#ifdef U3_LINUX
+    extern void U3LinuxScreenBounds(Rect *rect);
+    U3LinuxScreenBounds(rect);
+#else
     CGRect bounds = CGDisplayBounds(CGMainDisplayID());
 
     if (CGRectGetWidth(bounds) <= 0 || CGRectGetHeight(bounds) <= 0) {
@@ -64,6 +68,7 @@ void LWGetScreenRect(Rect *rect) {
     rect->top = (short)CGRectGetMinY(bounds);
     rect->right = (short)CGRectGetMaxX(bounds);
     rect->bottom = (short)CGRectGetMaxY(bounds);
+#endif
 }
 
 const BitMap *LWPortCopyBits(CGrafPtr port) {

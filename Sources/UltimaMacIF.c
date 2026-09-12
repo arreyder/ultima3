@@ -684,13 +684,9 @@ void WindowInit(short which) {
     Boolean smallSize = U3PlatformGetBooleanPreference(U3PreferenceOriginalSize);
     // Establish a default based on the size of their main screen.
     if (!keyExists) {
-        CFDictionaryRef mainDict = CGDisplayCurrentMode(kCGDirectMainDisplay);
-        CFNumberRef number;
-        int screenWidth, screenHeight;
-        number = CFDictionaryGetValue(mainDict, kCGDisplayWidth);
-        CFNumberGetValue(number, kCFNumberIntType, &screenWidth);
-        number = CFDictionaryGetValue(mainDict, kCGDisplayHeight);
-        CFNumberGetValue(number, kCFNumberIntType, &screenHeight);
+        LWGetScreenRect(&scrRect);
+        int screenWidth = scrRect.right - scrRect.left;
+        int screenHeight = scrRect.bottom - scrRect.top;
         smallSize = (screenWidth < 1280 || screenHeight < (800 + GetMBarHeight() + 8));
         U3PlatformSetBooleanPreference(U3PreferenceOriginalSize, smallSize);
     }
