@@ -39,8 +39,10 @@ From the repository root or build directory:
 | `--scale <1\|2>` | Window scale multiplier (default: `1`). |
 | `--classic` | Use classic Mac 1x appearance (640×384 canvas, text stats). |
 | `--modern` | Use modern appearance (character portraits, visual HP/Mana/Level bars, food gauges). |
-| `--speech` | Enable speech synthesis via Speech Dispatcher (spoken NPC dialogue and messages). |
+| `--speech` | Enable speech synthesis (auto-detects Piper neural or Speech Dispatcher). |
 | `--no-speech` | Disable speech synthesis. |
+| `--speech-engine <engine>` | Pluggable speech engine: `auto` (default), `piper` (neural), `speechd`, `cmd`, `none`. |
+| `--speech-cmd <template>` | Custom TTS command template (e.g. `"spd-say '%t'"` or custom script). Supports `%t` (text) and `%v` (voice). |
 | `--no-audio` | Disable SDL audio output and FluidSynth MIDI playback. |
 | `--script <keys>` | Programmatically execute a sequence of turns/commands (for automated tests or headless agent control). |
 | `--screenshot <file>` | Capture the final rendered frame to a BMP or PNG file upon script completion. |

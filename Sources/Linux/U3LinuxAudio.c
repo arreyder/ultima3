@@ -20,6 +20,7 @@
 #endif
 
 #include "U3LinuxAudio.h"
+#include "U3LinuxSpeech.h"
 #include "U3Platform.h"
 
 #include <SDL2/SDL.h>
@@ -676,118 +677,20 @@ void U3AudioApplyPreferences(void) {
 }
 
 /* ======================================================================
- * Speech synthesis: backed by Speech Dispatcher (libspeechd) dynamically
+ * Speech synthesis: delegated to pluggable U3LinuxSpeech subsystem
  * ==================================================================== */
 
-typedef void SPDConnection;
-typedef enum {
-    SPD_MODE_SINGLE = 0,
-    SPD_MODE_THREADED = 1
-} SPDConnectionMode;
-typedef enum {
-    SPD_IMPORTANT = 1,
-    SPD_MESSAGE = 2,
-    SPD_TEXT = 3,
-    SPD_NOTIFICATION = 4,
-    SPD_PROGRESS = 5
-} SPDPriority;
-typedef enum {
-    SPD_MALE1 = 1,
-    SPD_MALE2 = 2,
-    SPD_MALE3 = 3,
-    SPD_FEMALE1 = 4,
-    SPD_FEMALE2 = 5,
-    SPD_FEMALE3 = 6,
-    SPD_CHILD_MALE = 7,
-    SPD_CHILD_FEMALE = 8
-} SPDVoiceType;
-
-typedef SPDConnection* (*spd_open_fn)(const char*, const char*, const char*, int);
-typedef int (*spd_say_fn)(SPDConnection*, int, const char*);
-typedef void (*spd_close_fn)(SPDConnection*);
-typedef int (*spd_set_voice_type_fn)(SPDConnection*, int);
-typedef int (*spd_set_voice_pitch_fn)(SPDConnection*, int);
-typedef int (*spd_set_voice_rate_fn)(SPDConnection*, int);
-typedef int (*spd_cancel_fn)(SPDConnection*);
-
-static void *gSpeechLib = NULL;
-static SPDConnection *gSpeechConn = NULL;
-static spd_open_fn gSpdOpen = NULL;
-static spd_say_fn gSpdSay = NULL;
-static spd_close_fn gSpdClose = NULL;
-static spd_set_voice_type_fn gSpdSetVoiceType = NULL;
-static spd_set_voice_pitch_fn gSpdSetVoicePitch = NULL;
-static spd_set_voice_rate_fn gSpdSetVoiceRate = NULL;
-static spd_cancel_fn gSpdCancel = NULL;
-static bool gSpeechAttempted = false;
-static int16_t gLastVoiceID = -1;
-
 void U3AudioSetUpSpeech(void) {
-    if (gSpeechConn || gSpeechAttempted)
-        return;
-    gSpeechAttempted = true;
-
-    if (U3PlatformGetBooleanPreference && U3PlatformGetBooleanPreference(U3PreferenceSpeechDisabled))
-        return;
-    if (getenv("U3_NO_SPEECH") || getenv("U3_NO_AUDIO"))
-        return;
-    const char *audioDriver = getenv("SDL_AUDIODRIVER");
-    if (audioDriver && !strcmp(audioDriver, "dummy"))
-        return;
-
-    gSpeechLib = dlopen("libspeechd.so.2", RTLD_LAZY);
-    if (!gSpeechLib) {
-        gSpeechLib = dlopen("libspeechd.so", RTLD_LAZY);
-    }
-    if (!gSpeechLib) {
-        fprintf(stderr, "U3Audio: libspeechd not available; speech synthesis disabled.\n");
-        return;
-    }
-
-    gSpdOpen = (spd_open_fn)dlsym(gSpeechLib, "spd_open");
-    gSpdSay = (spd_say_fn)dlsym(gSpeechLib, "spd_say");
-    gSpdClose = (spd_close_fn)dlsym(gSpeechLib, "spd_close");
-    gSpdSetVoiceType = (spd_set_voice_type_fn)dlsym(gSpeechLib, "spd_set_voice_type");
-    gSpdSetVoicePitch = (spd_set_voice_pitch_fn)dlsym(gSpeechLib, "spd_set_voice_pitch");
-    gSpdSetVoiceRate = (spd_set_voice_rate_fn)dlsym(gSpeechLib, "spd_set_voice_rate");
-    gSpdCancel = (spd_cancel_fn)dlsym(gSpeechLib, "spd_cancel");
-
-    if (!gSpdOpen || !gSpdSay || !gSpdClose) {
-        fprintf(stderr, "U3Audio: failed to resolve libspeechd symbols; speech disabled.\n");
-        dlclose(gSpeechLib);
-        gSpeechLib = NULL;
-        return;
-    }
-
-    gSpeechConn = gSpdOpen("ultima3", "speech", NULL, SPD_MODE_THREADED);
-    if (!gSpeechConn) {
-        fprintf(stderr, "U3Audio: could not connect to Speech Dispatcher daemon; speech disabled.\n");
-        dlclose(gSpeechLib);
-        gSpeechLib = NULL;
-        return;
-    }
-
-    fprintf(stderr, "U3Audio: speech synthesis initialized via Speech Dispatcher.\n");
+    U3LinuxSpeechInit(gAssetsDirectory);
 }
 
 void U3AudioCloseSpeech(void) {
-    if (gSpeechConn) {
-        if (gSpdClose)
-            gSpdClose(gSpeechConn);
-        gSpeechConn = NULL;
-    }
-    if (gSpeechLib) {
-        dlclose(gSpeechLib);
-        gSpeechLib = NULL;
-    }
-    gSpeechAttempted = false;
-    gLastVoiceID = -1;
+    U3LinuxSpeechShutdown();
 }
 
-static void U3AudioApplyVoice(int16_t voiceID) {
-    if (!gSpeechConn || voiceID == gLastVoiceID)
+void U3AudioSpeakText(const char *text, int16_t voiceID) {
+    if (!text || !*text)
         return;
-    gLastVoiceID = voiceID;
 
     char voiceName[64] = {0};
     if (GetPascalStringFromArrayByIndex && voiceID > 0) {
@@ -799,74 +702,7 @@ static void U3AudioApplyVoice(int16_t voiceID) {
         }
     }
 
-    int vtype = SPD_MALE2;
-    int pitch = 0;
-    int rate = 0;
-
-    if (voiceName[0] != '\0') {
-        if (strcasestr(voiceName, "Agnes")) {
-            vtype = SPD_FEMALE1;
-            pitch = 30;
-        } else if (strcasestr(voiceName, "Victoria")) {
-            vtype = SPD_FEMALE2;
-            pitch = 15;
-        } else if (strcasestr(voiceName, "Bubbles")) {
-            vtype = SPD_CHILD_FEMALE;
-            pitch = 50;
-            rate = 30;
-        } else if (strcasestr(voiceName, "Hysterical")) {
-            vtype = SPD_FEMALE3;
-            pitch = 40;
-            rate = 40;
-        } else if (strcasestr(voiceName, "Deranged")) {
-            vtype = SPD_MALE3;
-            pitch = -30;
-            rate = 20;
-        } else if (strcasestr(voiceName, "Whisper")) {
-            vtype = SPD_MALE1;
-            pitch = -10;
-            rate = -25;
-        } else if (strcasestr(voiceName, "Zarvox")) {
-            vtype = SPD_MALE1;
-            pitch = 40;
-            rate = -15;
-        } else if (strcasestr(voiceName, "Bruce")) {
-            vtype = SPD_MALE1;
-            pitch = -25;
-        } else if (strcasestr(voiceName, "Ralph")) {
-            vtype = SPD_MALE2;
-            pitch = -10;
-        }
-    } else if (voiceID == 19) {
-        vtype = SPD_MALE1;
-        pitch = -20;
-    }
-
-    if (gSpdSetVoiceType) gSpdSetVoiceType(gSpeechConn, vtype);
-    if (gSpdSetVoicePitch) gSpdSetVoicePitch(gSpeechConn, pitch);
-    if (gSpdSetVoiceRate) gSpdSetVoiceRate(gSpeechConn, rate);
-}
-
-void U3AudioSpeakText(const char *text, int16_t voiceID) {
-    if (!text || !*text)
-        return;
-    if (U3PlatformGetBooleanPreference && U3PlatformGetBooleanPreference(U3PreferenceSpeechDisabled))
-        return;
-    if (getenv("U3_NO_SPEECH") || getenv("U3_NO_AUDIO"))
-        return;
-    const char *audioDriver = getenv("SDL_AUDIODRIVER");
-    if (audioDriver && !strcmp(audioDriver, "dummy"))
-        return;
-
-    if (!gSpeechConn && !gSpeechAttempted)
-        U3AudioSetUpSpeech();
-    if (!gSpeechConn || !gSpdSay)
-        return;
-
-    U3AudioApplyVoice(voiceID);
-    if (gSpdCancel)
-        gSpdCancel(gSpeechConn);
-    gSpdSay(gSpeechConn, SPD_TEXT, text);
+    U3LinuxSpeechSpeak(text, voiceID, voiceName[0] ? voiceName : NULL);
 }
 
 void U3AudioSpeakPascalString(uint8_t *pascalString, int16_t voiceID) {
@@ -897,14 +733,6 @@ void U3AudioSpeakPascalString(uint8_t *pascalString, int16_t voiceID) {
 }
 
 void U3AudioSpeakMessages(int16_t messageID, int16_t additionalMessageID, int16_t voiceID) {
-    if (U3PlatformGetBooleanPreference && U3PlatformGetBooleanPreference(U3PreferenceSpeechDisabled))
-        return;
-    if (getenv("U3_NO_SPEECH") || getenv("U3_NO_AUDIO"))
-        return;
-    const char *audioDriver = getenv("SDL_AUDIODRIVER");
-    if (audioDriver && !strcmp(audioDriver, "dummy"))
-        return;
-
     if (!GetPascalStringFromArrayByIndex || messageID <= 0)
         return;
 

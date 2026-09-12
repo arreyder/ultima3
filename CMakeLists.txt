@@ -69,6 +69,7 @@ if(U3_BUILD_GAME_CORE)
     find_library(U3_FLUIDSYNTH_LIBRARY NAMES fluidsynth libfluidsynth.so.3
         HINTS "/usr/lib/x86_64-linux-gnu" REQUIRED)
     find_library(U3_M_LIBRARY NAMES m REQUIRED)
+    find_package(Threads REQUIRED)
 
     add_library(u3linux-assets STATIC Sources/Linux/U3LinuxAssets.c)
     target_include_directories(u3linux-assets PRIVATE "${U3_JSON_INCLUDE_DIR}")
@@ -80,10 +81,10 @@ if(U3_BUILD_GAME_CORE)
     target_link_libraries(u3linux-io PUBLIC u3linux-assets u3legacy-memory u3bitmap)
     target_compile_options(u3linux-io PRIVATE -Wall -Wextra -Werror)
 
-    add_library(u3linux-audio STATIC Sources/Linux/U3LinuxAudio.c)
+    add_library(u3linux-audio STATIC Sources/Linux/U3LinuxAudio.c Sources/Linux/U3LinuxSpeech.c)
     target_include_directories(u3linux-audio PUBLIC Sources Sources/Linux
         "${U3_SYSROOT_INCLUDE_DIR}" "${U3_SYSROOT_ARCH_REAL_DIR}")
-    target_link_libraries(u3linux-audio PUBLIC u3bitmap "${U3_SDL2_LIBRARY}" "${U3_FLUIDSYNTH_LIBRARY}" "${U3_M_LIBRARY}" "${CMAKE_DL_LIBS}")
+    target_link_libraries(u3linux-audio PUBLIC u3bitmap "${U3_SDL2_LIBRARY}" "${U3_FLUIDSYNTH_LIBRARY}" "${U3_M_LIBRARY}" "${CMAKE_DL_LIBS}" Threads::Threads)
     target_compile_options(u3linux-audio PRIVATE -Wall -Wextra -Werror)
 
     add_library(u3linux-carbon STATIC Sources/Linux/U3LinuxCarbon.c)

@@ -129,7 +129,8 @@ static const char *FindAssetsDirectory(int argc, char **argv) {
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--script") || !strcmp(argv[i], "--scale") ||
             !strcmp(argv[i], "--screenshot") || !strcmp(argv[i], "--assets") ||
-            !strcmp(argv[i], "--step-delay")) {
+            !strcmp(argv[i], "--step-delay") || !strcmp(argv[i], "--speech-engine") ||
+            !strcmp(argv[i], "--speech-cmd")) {
             ++i;
             continue;
         }
@@ -169,8 +170,10 @@ static void PrintUsage(const char *prog) {
     fprintf(stdout, "  --modern                 Use modern appearance with character portraits and status bars\n");
     fprintf(stdout, "\nAudio options:\n");
     fprintf(stdout, "  --no-audio               Disable audio playback\n");
-    fprintf(stdout, "  --speech                 Enable text-to-speech synthesis (Speech Dispatcher)\n");
+    fprintf(stdout, "  --speech                 Enable text-to-speech synthesis\n");
     fprintf(stdout, "  --no-speech              Disable text-to-speech synthesis\n");
+    fprintf(stdout, "  --speech-engine <engine> Speech engine: auto, piper, speechd, cmd, none\n");
+    fprintf(stdout, "  --speech-cmd <template>  Custom TTS command template (e.g. \"spd-say %%t\")\n");
     fprintf(stdout, "\nAsset options:\n");
     fprintf(stdout, "  --assets <dir>           Path to assets directory\n");
     fprintf(stdout, "\nAutomated test options:\n");
@@ -216,6 +219,14 @@ int main(int argc, char *argv[]) {
         } else if (!strcmp(argv[i], "--no-speech")) {
             setenv("U3_NO_SPEECH", "1", 1);
             unsetenv("U3_SPEECH");
+        } else if (!strcmp(argv[i], "--speech-engine") && i + 1 < argc) {
+            setenv("U3_SPEECH_ENGINE", argv[++i], 1);
+        } else if (!strncmp(argv[i], "--speech-engine=", 16)) {
+            setenv("U3_SPEECH_ENGINE", argv[i] + 16, 1);
+        } else if (!strcmp(argv[i], "--speech-cmd") && i + 1 < argc) {
+            setenv("U3_SPEECH_COMMAND", argv[++i], 1);
+        } else if (!strncmp(argv[i], "--speech-cmd=", 13)) {
+            setenv("U3_SPEECH_COMMAND", argv[i] + 13, 1);
         } else if (!strcmp(argv[i], "--script") && i + 1 < argc) {
             setenv("U3_SCRIPT", argv[++i], 1);
         } else if (!strncmp(argv[i], "--script=", 9)) {

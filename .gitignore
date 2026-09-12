@@ -17,5 +17,8 @@ scripts/__pycache__/
 # Downloaded optional MIDI soundbank
 Resources/MusicMIDI/FluidR3_GM.sf2
 
+# Downloaded neural speech models & binary
+tools/piper/
+
 # Local release artifacts
 dist/
