@@ -127,8 +127,17 @@ static const char *FindAssetsDirectory(int argc, char **argv) {
     }
 
     for (int i = 1; i < argc; ++i) {
+        if (!strcmp(argv[i], "--script") || !strcmp(argv[i], "--scale") ||
+            !strcmp(argv[i], "--screenshot") || !strcmp(argv[i], "--assets")) {
+            ++i;
+            continue;
+        }
         if (argv[i][0] != '-') {
-            return argv[i];
+            char manifestPath[512];
+            snprintf(manifestPath, sizeof(manifestPath), "%s/manifest.json", argv[i]);
+            if (access(manifestPath, R_OK) == 0) {
+                return argv[i];
+            }
         }
     }
 
@@ -160,6 +169,9 @@ static void PrintUsage(const char *prog) {
     fprintf(stdout, "  --no-audio               Disable audio playback\n");
     fprintf(stdout, "\nAsset options:\n");
     fprintf(stdout, "  --assets <dir>           Path to assets directory\n");
+    fprintf(stdout, "\nAutomated test options:\n");
+    fprintf(stdout, "  --script <keys>          Execute a keystroke script to control character/test\n");
+    fprintf(stdout, "  --screenshot <file>      Capture final game screen to BMP/PNG image\n");
     fprintf(stdout, "\nGeneral options:\n");
     fprintf(stdout, "  -h, --help               Show this help message and exit\n");
 }
@@ -191,13 +203,26 @@ int main(int argc, char *argv[]) {
             classic = true;
         } else if (!strcmp(argv[i], "--no-audio")) {
             noAudio = true;
+        } else if (!strcmp(argv[i], "--script") && i + 1 < argc) {
+            setenv("U3_SCRIPT", argv[++i], 1);
+        } else if (!strncmp(argv[i], "--script=", 9)) {
+            setenv("U3_SCRIPT", argv[i] + 9, 1);
+        } else if (!strcmp(argv[i], "--screenshot") && i + 1 < argc) {
+            setenv("U3_SCREENSHOT", argv[++i], 1);
+        } else if (!strncmp(argv[i], "--screenshot=", 13)) {
+            setenv("U3_SCREENSHOT", argv[i] + 13, 1);
         }
     }
 
+    if (getenv("U3_SCRIPT") && !getenv("U3_SAVE_DIRECTORY")) {
+        setenv("U3_SAVE_DIRECTORY", "/tmp/u3-script-save", 0);
+    }
+
     if (getenv("U3_BOOT_CHECK") || getenv("U3_WORLD_RENDER_CHECK") ||
-        getenv("U3_WORLD_INPUT_CHECK") || getenv("U3_WORLD_MOUSE_CHECK")) {
+        getenv("U3_WORLD_INPUT_CHECK") || getenv("U3_WORLD_MOUSE_CHECK") ||
+        getenv("U3_SCRIPT")) {
         if (!getenv("U3_SAVE_DIRECTORY")) {
-            fprintf(stderr, "Boot check requires U3_SAVE_DIRECTORY for isolated storage.\n");
+            fprintf(stderr, "Check requires U3_SAVE_DIRECTORY for isolated storage.\n");
             return 2;
         }
         alarm(90);

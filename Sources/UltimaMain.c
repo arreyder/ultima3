@@ -264,7 +264,8 @@ void MainLoop(void) {
     demoptr = 0;
     CreateIntroData();
     if (!getenv("U3_COMMAND_TEXT_CHECK") && !getenv("U3_MODERN_TEXT_CHECK") && !getenv("U3_MAIN_MENU_INPUT_CHECK") &&
-        !getenv("U3_WORLD_INPUT_CHECK") && !getenv("U3_WORLD_MOUSE_CHECK"))
+        !getenv("U3_WORLD_INPUT_CHECK") && !getenv("U3_WORLD_MOUSE_CHECK") &&
+        !getenv("U3_SCRIPT"))
         Intro();
     U3RenderClearBottom();
     GetDemoRsrc();
@@ -297,7 +298,8 @@ void MainLoop(void) {
         return;
     }
     if (getenv("U3_WORLD_RENDER_CHECK") || getenv("U3_WORLD_INPUT_CHECK") ||
-        getenv("U3_WORLD_MOUSE_CHECK") || getenv("U3_PARTY_FLOW_CHECK")) {
+        getenv("U3_WORLD_MOUSE_CHECK") || getenv("U3_PARTY_FLOW_CHECK") ||
+        getenv("U3_SCRIPT")) {
         U3CharacterDraft draft = {{'A', 'd', 'a'}, {15, 15, 10, 10}, 'H', 'F', 'F'};
         short slot = 1;
         while (slot <= 20 && Player[slot][0]) ++slot;
@@ -1505,7 +1507,27 @@ void Game(void) {
             gDone = TRUE;
             return;
         }
-        if (diagnosticTurns == 2) {
+        const char *script = getenv("U3_SCRIPT");
+        if (script && (size_t)diagnosticTurns >= strlen(script)) {
+            const char *outBmp = getenv("U3_SCREENSHOT");
+            if (outBmp) {
+                U3CocoaPumpEvents();
+                U3CocoaWriteMainBitmap(outBmp);
+                fprintf(stderr, "Script screenshot saved: %s\n", outBmp);
+            }
+            fprintf(stderr, "Script completed: %u turns, pos=(%d,%d) map=%d\n",
+                    diagnosticTurns, xpos, ypos, (int)Party[3]);
+            gDone = TRUE;
+            return;
+        }
+        if (script && !diagnosticInputQueued) {
+            char nextKey = script[diagnosticTurns];
+            fprintf(stderr, "Script turn %u: executing '%c' at (%d,%d)\n",
+                    diagnosticTurns + 1, nextKey, xpos, ypos);
+            U3CocoaQueueDiagnosticKey(nextKey);
+            diagnosticInputQueued = TRUE;
+        }
+        if (!script && diagnosticTurns == 2) {
             const char *outputPath = getenv("U3_WORLD_MOUSE_CHECK") ?
                 getenv("U3_WORLD_MOUSE_CHECK") : getenv("U3_WORLD_INPUT_CHECK");
             U3CocoaPumpEvents();
@@ -1515,7 +1537,7 @@ void Game(void) {
             gDone = TRUE;
             return;
         }
-        if ((getenv("U3_WORLD_INPUT_CHECK") || getenv("U3_WORLD_MOUSE_CHECK")) && !diagnosticInputQueued) {
+        if (!script && (getenv("U3_WORLD_INPUT_CHECK") || getenv("U3_WORLD_MOUSE_CHECK")) && !diagnosticInputQueued) {
             fprintf(stderr, "World input: before (%d,%d)\n", xpos, ypos);
             if (getenv("U3_WORLD_MOUSE_CHECK"))
                 U3CocoaQueueDiagnosticMouse(600, 384);
@@ -1594,10 +1616,12 @@ void Game(void) {
                 default: break;
             }
             Routine6E35();
-            if (getenv("U3_WORLD_INPUT_CHECK") || getenv("U3_WORLD_MOUSE_CHECK")) {
+            if (getenv("U3_WORLD_INPUT_CHECK") || getenv("U3_WORLD_MOUSE_CHECK") || getenv("U3_SCRIPT")) {
                 ++diagnosticTurns;
-                fprintf(stderr, "World input: turn=%u key=%d mouse=%d after (%d,%d)\n",
-                        diagnosticTurns, (int)gKeyPress, (int)gMouseKey, xpos, ypos);
+                if (!getenv("U3_SCRIPT")) {
+                    fprintf(stderr, "World input: turn=%u key=%d mouse=%d after (%d,%d)\n",
+                            diagnosticTurns, (int)gKeyPress, (int)gMouseKey, xpos, ypos);
+                }
                 diagnosticInputQueued = FALSE;
             }
             if (StillDown()) {

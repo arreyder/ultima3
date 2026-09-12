@@ -1202,12 +1202,12 @@ void RenderCharStats(short ch, const Rect *rect) {   // 0-3
             num = Player[ros][25];
             maxnum = MaxMana(ros);
             SetRect(&barRect, blkSiz * 5, blkSiz + 1, blkSiz * 9.5, blkSiz * 2 - 4);
-            scale = (float)(barRect.right - barRect.left) / (float)maxnum;
+            scale = (maxnum > 0) ? ((float)(barRect.right - barRect.left) / (float)maxnum) : 0.0f;
             // Paint bar
             color.red = color.green = color.blue = 32767;
             RGBForeColor(&color);
             PaintRect(&barRect);
-            barRect.right = barRect.left + (num * scale);
+            barRect.right = barRect.left + (short)(num * scale);
             if (maxnum > 0 && (barRect.right > barRect.left + 1)) {
                 color.red = 0;
                 color.green = color.blue = 49152;

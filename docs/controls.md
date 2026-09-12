@@ -36,6 +36,8 @@ From the repository root or build directory:
 | `--scale <1\|2>` | Window scale multiplier (default: `1`). |
 | `--classic` | Use classic Apple II / Mac 1x appearance (640×384 canvas). |
 | `--no-audio` | Disable SDL audio output and FluidSynth MIDI playback. |
+| `--script <keys>` | Programmatically execute a sequence of turns/commands (for automated tests or headless agent control). |
+| `--screenshot <file>` | Capture the final rendered frame to a BMP or PNG file upon script completion. |
 | `--assets <dir>` | Explicit path to the exported `assets/` directory. |
 | `-h`, `--help` | Print command usage and exit immediately without initializing video. |
 
