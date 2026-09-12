@@ -62,7 +62,16 @@ void U3LinuxAudioConfigure(const char *assetsDirectory, bool disableAudio);
 
 /* Replaces the last-pushed settings used by U3AudioApplyPreferences(). Does
  * not itself start/stop anything -- call U3AudioApplyPreferences() after,
- * the same way the existing Mac preferences dialog does. */
+ * the same way the existing Mac preferences dialog does.
+ *
+ * Note that when this module is linked together with the preferences layer --
+ * i.e. in the game, as opposed to its own standalone test --
+ * U3AudioApplyPreferences() re-reads the stored values first and these pushed
+ * ones are overwritten. That mirrors the macOS reference, where
+ * ApplyVolumePreferences() reads its preferences itself; pushing settings is
+ * for hosts that have no preference storage at all. Changing a volume for real
+ * therefore means writing the preference, then calling
+ * U3AudioApplyPreferences(). */
 void U3LinuxAudioSetSettings(const U3LinuxAudioSettings *settings);
 
 /* Full teardown of SDL audio device and FluidSynth state. Safe to call even
@@ -85,3 +94,15 @@ bool U3LinuxAudioDebugEffectFrameCount(U3SoundEffect effect, size_t *outFrames);
  * up. Lets a test confirm FluidSynth is actually producing non-silent audio
  * without needing a real speaker. */
 bool U3LinuxAudioDebugRenderMusic(int16_t *buffer, int frames);
+
+/* The SoundFont actually in use, or NULL if music is not set up. Owned by this
+ * module. Which file this is depends on a probe: $U3_MIDI_SOUNDBANK if set,
+ * else the bundled bank, else the first loadable system-wide General MIDI bank
+ * (see kU3SystemSoundFonts in U3LinuxAudio.c). */
+const char *U3LinuxAudioSoundFontPath(void);
+
+/* The settings currently in force -- after any refresh U3AudioApplyPreferences()
+ * performed from stored preferences. Lets a test confirm a stored volume or
+ * mute actually reached the mixer, rather than only that applying it did not
+ * crash. Returns false if `out` is NULL. */
+bool U3LinuxAudioDebugSettings(U3LinuxAudioSettings *out);

@@ -30,7 +30,32 @@ int main(int argc, char **argv) {
     assert(tiles.pixels == old);
     assert(!U3LinuxAssetImage(assets, "Resources/Graphics/Standard-Tiles.png", &tiles, 385, 512, 12, 16));
     U3BitmapDispose(&tiles); U3BitmapDispose(&font);
+
+    /* U3LinuxAssetRGBA must hand back the alpha channel intact, which is the
+     * whole reason it exists alongside U3LinuxAssetImage: the window icon is a
+     * silhouette on transparency, and flattening it onto black would show as a
+     * black square in the taskbar. */
+    uint8_t *iconPixels = NULL;
+    int iconWidth = 0, iconHeight = 0;
+    assert(U3LinuxAssetRGBA(assets, "Images/AppIcon.png", &iconPixels, &iconWidth, &iconHeight));
+    assert(iconWidth == 256 && iconHeight == 256);
+    bool sawTransparent = false, sawOpaque = false;
+    for (int i = 3; i < iconWidth * iconHeight * 4; i += 4) {
+        if (iconPixels[i] == 0) sawTransparent = true;
+        if (iconPixels[i] == 255) sawOpaque = true;
+    }
+    assert(sawTransparent && "the icon's transparent margin should survive the load");
+    assert(sawOpaque && "the icon's artwork should survive the load");
+    free(iconPixels);
+
+    /* Absent images and bad arguments fail without writing the outputs. */
+    uint8_t *missingPixels = (uint8_t *)&missingPixels;
+    int missingWidth = -7, missingHeight = -7;
+    assert(!U3LinuxAssetRGBA(assets, "no/such/asset.png", &missingPixels, &missingWidth, &missingHeight));
+    assert(missingWidth == -7 && missingHeight == -7);
+    assert(!U3LinuxAssetRGBA(assets, "Images/AppIcon.png", NULL, &missingWidth, &missingHeight));
+
     U3LinuxAssetsClose(assets);
-    puts("Linux runtime map, text, tile, and font loading passed");
+    puts("Linux runtime map, text, tile, font, and icon loading passed");
     return 0;
 }

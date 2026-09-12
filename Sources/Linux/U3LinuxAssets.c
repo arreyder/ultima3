@@ -183,3 +183,22 @@ bool U3LinuxAssetImage(U3LinuxAssets *assets, const char *source, U3Bitmap *bitm
     *bitmap = scaled;
     return true;
 }
+
+bool U3LinuxAssetRGBA(U3LinuxAssets *assets, const char *source,
+                      uint8_t **pixels, int *width, int *height) {
+    if (!pixels || !width || !height) return false;
+    struct json_object *record = find_named(assets, "images", "source", source);
+    if (!record) return false;
+    int64_t sw = integer_member(record, "width"), sh = integer_member(record, "height");
+    const char *format = string_member(record, "format");
+    if (!format || strcmp(format, "RGBA8") || sw <= 0 || sh <= 0 ||
+        sw > 32767 || sh > 32767 || integer_member(record, "stride") != sw * 4) return false;
+    size_t size = 0;
+    uint8_t *bytes = read_record(assets, record, &size);
+    if (!bytes) return false;
+    if (size != (size_t)(sw * sh * 4)) { free(bytes); return false; }
+    *pixels = bytes;
+    *width = (int)sw;
+    *height = (int)sh;
+    return true;
+}

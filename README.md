@@ -11,11 +11,39 @@ current macOS build is maintained for Apple silicon and is documented below.
 
 _Random fun fact: Ultima III was one of the first games to acknowledge non-binary gender!_
 
-## Build on modern macOS
+## Build on Linux
 
-For the in-progress native Linux port, see the [Linux foundation build](docs/linux-build.md)
-and [port plan](docs/linux-port-plan.md). The current Linux target builds the
-portable bitmap library and asset bundle; it is not yet a playable game.
+The native Linux port is playable: an SDL2 window, the original software
+renderer, PCM sound effects, FluidSynth MIDI music, speech synthesis, and
+persistent saves.
+
+```sh
+cmake -S . -B build/linux-game \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang \
+    -DU3_BUILD_GAME_CORE=ON -DPython3_EXECUTABLE=/usr/bin/python3
+cmake --build build/linux-game --parallel
+./build/linux-game/ultima3
+```
+
+Needs Clang (the preserved game sources use Pascal string literals), SDL2,
+FluidSynth, JSON-C, and Pillow for the build-time asset export. `--help` lists
+every option; see the [controls and gameplay reference](docs/controls.md) for
+keys, the CLI flags, and the display hotkeys (`F11` fullscreen, `F10` CRT
+scanlines, `F8` scaling mode).
+
+To install system-wide, along with a desktop entry and icons, or to build an
+AppImage or Flatpak, see [packaging/README.md](packaging/README.md):
+
+```sh
+sudo cmake --install build/linux-game --prefix /usr/local
+```
+
+Background: the [Linux foundation build](docs/linux-build.md), the
+[port plan](docs/linux-port-plan.md), and the
+[modernization roadmap](docs/linux-modernization-roadmap.md) for what is done
+and what is still open.
+
+## Build on modern macOS
 
 Requirements:
 

@@ -6,7 +6,7 @@
  *     -I Sources -I Sources/Linux \
  *     -I build/deps/sysroot/usr/include -I build/deps/sysroot/usr/include/x86_64-linux-gnu \
  *     tests/linux-video-test.c Sources/Linux/U3LinuxVideo.c Sources/U3Bitmap.c \
- *     Sources/Linux/U3LinuxAssets.c \
+ *     Sources/Linux/U3LinuxAssets.c Sources/Linux/U3LinuxPlatform.c \
  *     -L build/deps/sysroot/usr/lib/x86_64-linux-gnu -ljson-c \
  *     /usr/lib/x86_64-linux-gnu/libSDL2-2.0.so.0 \
  *     -o /tmp/u3-linux-video-test
@@ -292,6 +292,108 @@ int main(int argc, char **argv) {
     short outSlot4 = 0;
     U3CharacterDraft draft4 = {{0}, {15, 15, 10, 10}, 'H', 'F', 'M'};
     assert(!U3CocoaCreateCharacter(fullRoster, &outSlot4, &draft4));
+
+    /* ---- Presentation geometry ----
+     *
+     * The window is what the player drags, so this is the contract that keeps
+     * a resize from cropping or distorting the game. Checked through the test
+     * hook because no headless SDL driver gives a really resizable window. */
+    int px, py, pw, ph;
+
+    /* Whole-pixel scaling is the default: pick the largest integer factor that
+     * fits both axes and center the result. */
+    assert(!U3LinuxVideoSmoothScaling());
+    U3LinuxVideoPresentationRectForTesting(1280, 768, 640, 384, &px, &py, &pw, &ph);
+    assert(pw == 1280 && ph == 768 && px == 0 && py == 0);
+    U3LinuxVideoPresentationRectForTesting(1920, 800, 640, 384, &px, &py, &pw, &ph);
+    assert(pw == 1280 && ph == 768); /* height allows 2x, not 3x */
+    assert(px == (1920 - 1280) / 2 && py == (800 - 768) / 2);
+
+    /* An exact fit must not be pushed off-center by rounding. */
+    U3LinuxVideoPresentationRectForTesting(640, 384, 640, 384, &px, &py, &pw, &ph);
+    assert(px == 0 && py == 0 && pw == 640 && ph == 384);
+
+    /* Below 1x no integer factor fits. The old behavior clamped to 1x and let
+     * the image overflow the window, silently cropping the game; it must fall
+     * back to an aspect-preserving fit instead. */
+    U3LinuxVideoPresentationRectForTesting(320, 384, 640, 384, &px, &py, &pw, &ph);
+    assert(pw == 320 && ph == 192 && "a too-narrow window must letterbox, not crop");
+    assert(px == 0 && py == (384 - 192) / 2);
+    U3LinuxVideoPresentationRectForTesting(640, 192, 640, 384, &px, &py, &pw, &ph);
+    assert(pw == 320 && ph == 192 && "a too-short window must pillarbox, not crop");
+    assert(px == (640 - 320) / 2 && py == 0);
+
+    /* Smooth scaling fills the tighter axis exactly at any size, and keeps the
+     * 5:3 aspect ratio rather than stretching to the window. */
+    U3LinuxVideoSetSmoothScaling(true);
+    assert(U3LinuxVideoSmoothScaling());
+    U3LinuxVideoPresentationRectForTesting(1000, 768, 640, 384, &px, &py, &pw, &ph);
+    assert(pw == 1000 && ph == 600 && px == 0 && py == (768 - 600) / 2);
+    U3LinuxVideoPresentationRectForTesting(1920, 768, 640, 384, &px, &py, &pw, &ph);
+    assert(ph == 768 && pw == 1280 && px == (1920 - 1280) / 2 && py == 0);
+    U3LinuxVideoSetSmoothScaling(false);
+    assert(!U3LinuxVideoSmoothScaling());
+
+    /* Degenerate sizes must not divide by zero; the rect stays usable. */
+    U3LinuxVideoPresentationRectForTesting(0, 0, 640, 384, &px, &py, &pw, &ph);
+    assert(pw >= 1 && ph >= 1);
+    U3LinuxVideoPresentationRectForTesting(640, 384, 0, 0, &px, &py, &pw, &ph);
+    assert(pw >= 1 && ph >= 1);
+
+    /* ---- CRT scanline filter ----
+     *
+     * Verified by reading the rendered frame back rather than by eye: fill the
+     * bitmap white, then check what reaches the window. The surface here is
+     * 400x250 in a window scaled 2x, so each game row covers two window rows
+     * and the filter must darken exactly one of each pair. */
+    assert(!U3LinuxVideoScanlines());
+    U3CocoaSetForegroundRGB(65535, 65535, 65535);
+    U3CocoaPaintRect(0, 0, main_bitmap->width, main_bitmap->height);
+
+    int frameW = 0, frameH = 0;
+    assert(U3LinuxVideoReadFrameForTesting(NULL, 0, &frameW, &frameH));
+    int factor = frameH / main_bitmap->height;
+    assert(factor >= 1 && frameW == main_bitmap->width * factor);
+    size_t frameBytes = (size_t)frameW * frameH * 4;
+    uint8_t *frame = malloc(frameBytes);
+    assert(frame);
+
+    /* A buffer smaller than the frame is refused rather than overrun. */
+    assert(!U3LinuxVideoReadFrameForTesting(frame, frameBytes - 1, NULL, NULL));
+
+    /* Without the filter every row of the scaled image is equally bright. */
+    assert(U3LinuxVideoReadFrameForTesting(frame, frameBytes, NULL, NULL));
+    for (int y = 0; y < frameH; ++y)
+        assert(frame[(size_t)y * frameW * 4] >= 200 && "unfiltered rows should all be bright");
+
+    U3LinuxVideoSetScanlines(true);
+    assert(U3LinuxVideoScanlines());
+    assert(U3LinuxVideoReadFrameForTesting(frame, frameBytes, NULL, NULL));
+    int darkRows = 0;
+    for (int y = 0; y < frameH; ++y)
+        if (frame[(size_t)y * frameW * 4] < 200) ++darkRows;
+    if (factor >= 2) {
+        /* One darkened band per game row, each covering half of it. */
+        assert(darkRows == main_bitmap->height * (factor / 2));
+        /* Darkened, not blacked out -- the artwork must still read through. */
+        int firstDark = -1;
+        for (int y = 0; y < frameH && firstDark < 0; ++y)
+            if (frame[(size_t)y * frameW * 4] < 200) firstDark = y;
+        assert(firstDark >= 0 && frame[(size_t)firstDark * frameW * 4] > 0);
+    } else {
+        /* Below 2x there is no room for a dark row between the bright ones,
+         * so the filter must leave the image alone rather than halve it. */
+        assert(darkRows == 0 && "the filter should be inert below 2x");
+    }
+
+    U3LinuxVideoSetScanlines(false);
+    assert(!U3LinuxVideoScanlines());
+    assert(U3LinuxVideoReadFrameForTesting(frame, frameBytes, NULL, NULL));
+    for (int y = 0; y < frameH; ++y)
+        assert(frame[(size_t)y * frameW * 4] >= 200 && "disabling the filter should restore every row");
+    free(frame);
+    fprintf(stderr, "scanline filter verified at %dx (%d of %d rows darkened)\n",
+            factor, darkRows, frameH);
 
     U3CocoaPresentMainSurface();
     U3CocoaPumpEvents();

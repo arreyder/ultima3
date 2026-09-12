@@ -80,6 +80,34 @@ void U3LinuxPlatformSetInputSource(const U3LinuxInputSource *source);
 const U3LinuxInputSource *U3LinuxPlatformGetInputSource(void);
 
 /* ---------------------------------------------------------------------
+ * Linux-only preference keys
+ *
+ * These continue U3PreferenceKey's numbering past its last shared member
+ * instead of being added to the enum in Sources/U3Platform.h. That header
+ * is the cross-platform contract, and Sources/U3PlatformLegacy.m switches
+ * exhaustively over it, so a new member there would warn (and under
+ * -Werror break) the macOS build for options only the SDL host can honor.
+ *
+ * Passing these through the U3Platform.h getters and setters is safe: all
+ * of them validate the key by range against the backing table, never by
+ * enum membership. They are stored in the same preferences.conf as every
+ * other key, under the names in kPrefMeta.
+ *
+ * Both are phrased so that "absent" -- which the boolean getter reports as
+ * false -- is the desired default, matching how the shared keys already
+ * spell inverted defaults (SoundDisabled, NoAutoHeal, NoDiagonals).
+ * ------------------------------------------------------------------- */
+
+/* false (default): scale the game bitmap by whole pixels, keeping the
+ * original pixel grid crisp. true: fit the window exactly, preserving
+ * aspect ratio but resampling to non-integer factors. */
+#define U3PreferenceLinuxSmoothScaling ((U3PreferenceKey)(U3PreferenceTileSet + 1))
+
+/* false (default): present the bitmap as-is. true: overlay a CRT-style
+ * scanline filter. */
+#define U3PreferenceLinuxScanlines ((U3PreferenceKey)(U3PreferenceTileSet + 2))
+
+/* ---------------------------------------------------------------------
  * Preferences: test / integration helpers
  *
  * These are Linux-only additions, not part of the U3Platform.h contract.

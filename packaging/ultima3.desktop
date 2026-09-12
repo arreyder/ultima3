@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Ultima III: Exodus
+GenericName=Role-Playing Game
+Comment=LairWare's remake of the 1983 Origin Systems classic
+Exec=ultima3
+TryExec=ultima3
+Icon=ultima3
+Terminal=false
+Categories=Game;RolePlaying;
+Keywords=ultima;exodus;rpg;crpg;retro;
+PrefersNonDefaultGPU=false
+# Matches the WM_CLASS SDL2 derives from the executable name, so the shell
+# associates the game's window with this entry instead of showing a second,
+# unnamed icon next to it.
+StartupWMClass=ultima3

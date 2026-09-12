@@ -492,6 +492,10 @@ static const PrefMeta kPrefMeta[] = {
     [U3PreferenceSaveWindowY] = {"SaveWindowY", PrefTypeInt, 0},
     [U3PreferenceGameFont] = {"GameFont", PrefTypeString, 0},
     [U3PreferenceTileSet] = {"TileSet", PrefTypeString, 0},
+    /* Linux-only display keys; see U3LinuxPlatform.h for why they extend the
+     * shared enum's numbering rather than the enum itself. */
+    [U3PreferenceLinuxSmoothScaling] = {"LinuxSmoothScaling", PrefTypeBool, 0},
+    [U3PreferenceLinuxScanlines] = {"LinuxScanlines", PrefTypeBool, 0},
 };
 #define kPrefCount (sizeof(kPrefMeta) / sizeof(kPrefMeta[0]))
 

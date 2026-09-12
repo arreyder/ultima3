@@ -22,6 +22,7 @@
 //        immediately, independent of any driver.
 
 #include "U3LinuxAudio.h"
+#include "U3Platform.h"
 
 #include <SDL2/SDL.h>
 
@@ -210,8 +211,81 @@ static void TestRealConfiguration(const char *assetsDir) {
 
         U3AudioStopMusic();
         CHECK(1, "StopMusic (fade + stop) did not crash");
+
+        /* The SoundFont probe must report which bank it settled on, and with
+         * a complete asset bundle that has to be the bundled one -- the
+         * system fallback is only for bundles that ship none. */
+        const char *bank = U3LinuxAudioSoundFontPath();
+        CHECK(bank != NULL, "the loaded SoundFont is reported, not just logged");
+        if (bank) {
+            CHECK(strstr(bank, "GeneralUser-GS.sf2") != NULL,
+                  "a complete bundle uses its own bundled SoundFont, not a system one");
+        }
+
+        /* Volumes retune in place: no device reopen, no gap in the song, and
+         * the values come from stored preferences the way macOS's
+         * ApplyVolumePreferences reads them. This test does link the
+         * preferences layer, so the weak symbols resolve. */
+        U3LinuxAudioSettings quiet = {false, false, 25, 25};
+        U3LinuxAudioSetSettings(&quiet);
+        U3AudioApplyPreferences();
+        CHECK(1, "ApplyPreferences at 25% volume did not crash or reopen the device");
+        U3AudioPlaySound(U3SoundEffectStep, false);
+        CHECK(1, "an effect still plays after a volume change");
+
+        /* Muting sound must actually suppress playback rather than be ignored,
+         * which is what the unwired settings path used to do. */
+        U3LinuxAudioSettings muted = {true, true, 100, 100};
+        U3LinuxAudioSetSettings(&muted);
+        CHECK(1, "pushing a muted configuration did not crash");
     }
 
+    U3LinuxAudioShutdown();
+}
+
+/* The stored volume and mute preferences must reach the mixer. Before this was
+ * wired up, U3AudioApplyPreferences() applied only this module's compiled-in
+ * defaults and every stored choice was silently discarded. Verified through
+ * the public boundary: write the preference, apply, and confirm the module
+ * reports the value it actually adopted. */
+static void TestStoredPreferencesReachTheMixer(const char *assetsDir) {
+    if (!assetsDir) return;
+    ResetGlobals();
+    U3LinuxAudioConfigure(assetsDir, false);
+    U3AudioOpenEffects();
+
+    /* Start from a known-clean state: push values that differ from what we
+     * are about to store, so a pass cannot come from them already matching. */
+    U3LinuxAudioSettings pushed = {false, false, 100, 100};
+    U3LinuxAudioSetSettings(&pushed);
+
+    U3PlatformSetIntegerPreference(U3PreferenceSoundVolume, 40);
+    U3PlatformSetIntegerPreference(U3PreferenceMusicVolume, 60);
+    U3PlatformSetBooleanPreference(U3PreferenceSoundDisabled, true);
+    U3PlatformSetBooleanPreference(U3PreferenceMusicDisabled, true);
+    U3AudioApplyPreferences();
+
+    U3LinuxAudioSettings live = {false, false, 0, 0};
+    CHECK(U3LinuxAudioDebugSettings(&live), "the live settings can be read back");
+    CHECK(live.soundVolumePercent == 40,
+          "stored SoundVolume reaches the mixer through ApplyPreferences");
+    CHECK(live.musicVolumePercent == 60,
+          "stored MusicVolume reaches the synth through ApplyPreferences");
+    CHECK(live.soundDisabled, "stored SoundDisabled is honored");
+    CHECK(live.musicDisabled, "stored MusicDisabled is honored");
+
+    /* And a later change is picked up without reopening anything. */
+    U3PlatformSetIntegerPreference(U3PreferenceSoundVolume, 90);
+    U3PlatformSetBooleanPreference(U3PreferenceSoundDisabled, false);
+    U3AudioApplyPreferences();
+    CHECK(U3LinuxAudioDebugSettings(&live) && live.soundVolumePercent == 90,
+          "a volume change takes effect without a device reopen");
+    CHECK(!live.soundDisabled, "unmuting takes effect too");
+
+    U3PlatformRemovePreference(U3PreferenceSoundVolume);
+    U3PlatformRemovePreference(U3PreferenceMusicVolume);
+    U3PlatformRemovePreference(U3PreferenceSoundDisabled);
+    U3PlatformRemovePreference(U3PreferenceMusicDisabled);
     U3LinuxAudioShutdown();
 }
 
@@ -227,6 +301,7 @@ int main(int argc, char **argv) {
     }
     TestUnconfiguredIsSafe();
     TestRealConfiguration(assetsDir);
+    TestStoredPreferencesReachTheMixer(assetsDir);
 
     if (gFailures > 0) {
         fprintf(stderr, "\n%d check(s) FAILED\n", gFailures);

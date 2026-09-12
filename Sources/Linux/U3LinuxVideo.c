@@ -34,6 +34,7 @@
 #include "CarbonShunts.h"
 #include "CocoaBridge.h"
 #include "U3LinuxVideo.h"
+#include "U3LinuxPlatform.h"
 
 #include <SDL2/SDL.h>
 
@@ -83,6 +84,14 @@ static char gSurfaceToken;
 static bool gSurfaceCreated = false;
 static bool gFullscreen = false;
 static bool gHeadlessDiagnostic = false;
+
+/* Presentation options, seeded from preferences the first time a surface is
+ * created and thereafter toggled live by the hotkeys in HandleSDLEvent. Kept
+ * as plain bools rather than read from preferences on every present, which
+ * happens once per game frame. */
+static bool gSmoothScaling = false;
+static bool gScanlines = false;
+static bool gPresentationOptionsLoaded = false;
 
 /* ---- Input ---- */
 static U3PendingInput gPending[U3_PENDING_CAPACITY];
@@ -539,6 +548,61 @@ static bool EnsureSDLVideo(void) {
     return true;
 }
 
+/* Centered, aspect-preserving placement of the game bitmap inside a window of
+ * winW x winH, with the leftover margin left as letterbox/pillarbox bars.
+ *
+ * Integer scaling is the default because it keeps the original pixel grid
+ * exact, but it cannot honor a window smaller than the bitmap: the factor
+ * would floor to zero. Rather than clamp to 1 and let the image overflow the
+ * window -- which silently cropped the game when the player dragged the window
+ * below 640x384 -- fall back to a fractional fit whenever no integer factor
+ * fits, and whenever the player has asked for smooth scaling outright. Either
+ * way the whole screen stays visible and correctly proportioned at every size
+ * the compositor hands us, which is what makes live resizing usable.
+ */
+static void ComputePresentation(int winW, int winH, int bmpW, int bmpH, SDL_Rect *out) {
+    if (bmpW <= 0 || bmpH <= 0 || winW <= 0 || winH <= 0) {
+        out->x = out->y = 0;
+        out->w = winW > 0 ? winW : 1;
+        out->h = winH > 0 ? winH : 1;
+        return;
+    }
+    int byWidth = winW / bmpW, byHeight = winH / bmpH;
+    int factor = byWidth < byHeight ? byWidth : byHeight;
+    int w, h;
+    if (!gSmoothScaling && factor >= 1) {
+        w = bmpW * factor;
+        h = bmpH * factor;
+    } else if ((long)winW * bmpH <= (long)winH * bmpW) {
+        /* Width is the tighter axis: fill it and letterbox above and below. */
+        w = winW;
+        h = (int)(((long)winW * bmpH) / bmpW);
+    } else {
+        h = winH;
+        w = (int)(((long)winH * bmpW) / bmpH);
+    }
+    out->x = (winW - w) / 2;
+    out->y = (winH - h) / 2;
+    out->w = w > 0 ? w : 1;
+    out->h = h > 0 ? h : 1;
+}
+
+/* The destination rect the bitmap is currently presented into. */
+static void CurrentPresentation(SDL_Rect *out) {
+    int winW = gMainBitmap.width, winH = gMainBitmap.height;
+    if (gWindow)
+        SDL_GetWindowSize(gWindow, &winW, &winH);
+    ComputePresentation(winW, winH, gMainBitmap.width, gMainBitmap.height, out);
+}
+
+/* Nearest-neighbor keeps whole-pixel scaling exact; linear only earns its
+ * blur once the factor is fractional and the grid cannot be preserved anyway. */
+static void ApplyTextureScaleMode(void) {
+    if (gTexture)
+        SDL_SetTextureScaleMode(gTexture, gSmoothScaling ? SDL_ScaleModeLinear
+                                                         : SDL_ScaleModeNearest);
+}
+
 static bool EnsureTexture(int width, int height) {
     if (gTexture && gTextureWidth == width && gTextureHeight == height)
         return true;
@@ -550,16 +614,94 @@ static bool EnsureTexture(int width, int height) {
                                  width, height);
     if (!gTexture)
         return false;
-    SDL_SetTextureScaleMode(gTexture, SDL_ScaleModeNearest);
+    ApplyTextureScaleMode();
     gTextureWidth = width;
     gTextureHeight = height;
     return true;
+}
+
+/* Seed the live presentation options from stored preferences. Done once, on
+ * first surface creation, because the preferences file is not readable until
+ * U3LinuxPlatform has resolved its directory -- and skipped entirely once a
+ * setter has run, so a CLI flag is never clobbered by the stored value it was
+ * meant to override. */
+static void LoadPresentationOptions(void) {
+    if (gPresentationOptionsLoaded)
+        return;
+    gPresentationOptionsLoaded = true;
+    gSmoothScaling = U3PlatformGetBooleanPreference(U3PreferenceLinuxSmoothScaling);
+    gScanlines = U3PlatformGetBooleanPreference(U3PreferenceLinuxScanlines);
+}
+
+void U3LinuxVideoSetSmoothScaling(bool smooth) {
+    gPresentationOptionsLoaded = true;
+    gSmoothScaling = smooth;
+    U3PlatformSetBooleanPreference(U3PreferenceLinuxSmoothScaling, smooth);
+    ApplyTextureScaleMode();
+    if (gSurfaceCreated)
+        U3CocoaPresentMainSurface();
+}
+
+bool U3LinuxVideoSmoothScaling(void) {
+    LoadPresentationOptions();
+    return gSmoothScaling;
+}
+
+void U3LinuxVideoSetScanlines(bool enabled) {
+    gPresentationOptionsLoaded = true;
+    gScanlines = enabled;
+    U3PlatformSetBooleanPreference(U3PreferenceLinuxScanlines, enabled);
+    if (gSurfaceCreated)
+        U3CocoaPresentMainSurface();
+}
+
+bool U3LinuxVideoScanlines(void) {
+    LoadPresentationOptions();
+    return gScanlines;
+}
+
+void U3LinuxVideoPresentationRectForTesting(int windowWidth, int windowHeight,
+                                            int bitmapWidth, int bitmapHeight,
+                                            int *outX, int *outY, int *outW, int *outH) {
+    SDL_Rect rect;
+    ComputePresentation(windowWidth, windowHeight, bitmapWidth, bitmapHeight, &rect);
+    if (outX) *outX = rect.x;
+    if (outY) *outY = rect.y;
+    if (outW) *outW = rect.w;
+    if (outH) *outH = rect.h;
+}
+
+/* Give the window the game's own icon so GNOME Shell, KDE's task manager and
+ * Wayland docks show Exodus rather than a generic placeholder. The icon comes
+ * from the asset bundle (Images/AppIcon.png, exported as straight RGBA8) and
+ * must keep its alpha: compositing it onto black first, as U3LinuxAssetImage
+ * does for game art, would put a black square behind the dragon.
+ *
+ * Purely cosmetic, so every failure path here is silent -- a missing icon must
+ * not stop the game from opening a window. */
+static void ApplyWindowIcon(void) {
+    if (!gWindow || !gAssets)
+        return;
+    uint8_t *pixels = NULL;
+    int width = 0, height = 0;
+    if (!U3LinuxAssetRGBA(gAssets, "Images/AppIcon.png", &pixels, &width, &height))
+        return;
+    SDL_Surface *icon = SDL_CreateRGBSurfaceWithFormatFrom(pixels, width, height, 32,
+                                                           width * 4, SDL_PIXELFORMAT_RGBA32);
+    if (icon) {
+        SDL_SetWindowIcon(gWindow, icon);
+        SDL_FreeSurface(icon);
+    }
+    /* SDL_SetWindowIcon copies the pixels into the window manager's own
+     * representation, so the source buffer is ours to release immediately. */
+    free(pixels);
 }
 
 void *U3CocoaCreateMainSurface(short xposn, short yposn, short width, short height) {
     if (!U3CocoaResizeMainBitmap(width, height))
         return NULL;
     gHeadlessDiagnostic = U3CocoaIsHeadlessDiagnostic();
+    LoadPresentationOptions();
     if (!EnsureSDLVideo())
         return NULL;
     if (!gWindow) {
@@ -586,6 +728,7 @@ void *U3CocoaCreateMainSurface(short xposn, short yposn, short width, short heig
                                    posX, posY, winW, winH, flags);
         if (!gWindow)
             return NULL;
+        ApplyWindowIcon();
         if (!gHeadlessDiagnostic)
             SDL_RaiseWindow(gWindow);
         gRenderer = SDL_CreateRenderer(gWindow, -1, SDL_RENDERER_PRESENTVSYNC);
@@ -724,30 +867,13 @@ static char FilterTextByte(unsigned char c) {
     return (c >= 32 && c < 127) ? (char)c : 0;
 }
 
-static int WindowToBitmapScale(int windowExtent, int bitmapExtent) {
-    if (bitmapExtent <= 0)
-        return 1;
-    int scale = windowExtent / bitmapExtent;
-    return scale < 1 ? 1 : scale;
-}
-
-static void ComputePresentation(int winW, int winH, int bmpW, int bmpH,
-                                int *scale, int *offX, int *offY) {
-    int sx = WindowToBitmapScale(winW, bmpW);
-    int sy = WindowToBitmapScale(winH, bmpH);
-    *scale = sx < sy ? sx : sy;
-    *offX = (winW - bmpW * *scale) / 2;
-    *offY = (winH - bmpH * *scale) / 2;
-}
-
+/* Inverse of the presentation mapping, so a click lands on the tile the player
+ * actually pointed at under any scale factor, integer or not. */
 static void WindowToBitmapPoint(int wx, int wy, short *outX, short *outY) {
-    int winW = 0, winH = 0;
-    if (gWindow)
-        SDL_GetWindowSize(gWindow, &winW, &winH);
-    int scale, offX, offY;
-    ComputePresentation(winW, winH, gMainBitmap.width, gMainBitmap.height, &scale, &offX, &offY);
-    int bx = (wx - offX) / scale;
-    int by = (wy - offY) / scale;
+    SDL_Rect dest;
+    CurrentPresentation(&dest);
+    int bx = (int)(((long)(wx - dest.x) * gMainBitmap.width) / dest.w);
+    int by = (int)(((long)(wy - dest.y) * gMainBitmap.height) / dest.h);
     if (bx < 0) bx = 0;
     if (by < 0) by = 0;
     if (gMainBitmap.width > 0 && bx >= gMainBitmap.width) bx = gMainBitmap.width - 1;
@@ -756,12 +882,56 @@ static void WindowToBitmapPoint(int wx, int wy, short *outX, short *outY) {
     *outY = (short)by;
 }
 
+/* Window-manager-level display keys, handled here and deliberately not
+ * forwarded to the game: F11 / Alt+Enter is the modern PC convention for
+ * fullscreen, and neither it nor the presentation toggles corresponds to any
+ * Ultima III command, so swallowing them cannot shadow a game key.
+ *
+ * Each one persists its new state, so a display choice made in-game survives a
+ * restart the same way the CLI flags do.
+ *
+ * Returns true if the event was consumed as a display key.
+ */
+static bool HandleDisplayKey(const SDL_KeyboardEvent *key) {
+    SDL_Keycode sym = key->keysym.sym;
+    bool altEnter = (sym == SDLK_RETURN || sym == SDLK_KP_ENTER) &&
+                    (key->keysym.mod & KMOD_ALT) != 0;
+    if (sym == SDLK_F11 || altEnter) {
+        U3CocoaSetMainSurfaceFullScreen(!gFullscreen);
+        U3PlatformSetBooleanPreference(U3PreferenceFullScreen, gFullscreen);
+        return true;
+    }
+    if (sym == SDLK_F10) {
+        U3LinuxVideoSetScanlines(!gScanlines);
+        return true;
+    }
+    if (sym == SDLK_F8) {
+        U3LinuxVideoSetSmoothScaling(!gSmoothScaling);
+        return true;
+    }
+    return false;
+}
+
 static void HandleSDLEvent(const SDL_Event *event) {
     switch (event->type) {
         case SDL_QUIT:
             U3LinuxVideoShutdown();
             exit(0);
+        case SDL_WINDOWEVENT:
+            /* The game only presents when it redraws, which during a drag-resize
+             * can be many seconds away (it blocks waiting for input). Re-present
+             * on the spot so the letterbox bars and scale follow the pointer
+             * instead of leaving a stretched or torn window behind. SIZE_CHANGED
+             * covers both user resizes and fullscreen transitions; EXPOSED covers
+             * the compositor asking for a repaint after an occlusion. */
+            if (event->window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
+                event->window.event == SDL_WINDOWEVENT_RESIZED ||
+                event->window.event == SDL_WINDOWEVENT_EXPOSED)
+                U3CocoaPresentMainSurface();
+            break;
         case SDL_KEYDOWN: {
+            if (HandleDisplayKey(&event->key))
+                break;
             char key = MapControlKey(event->key.keysym.sym);
             if (key)
                 PushPendingBack(false, key, 0, 0);
@@ -799,20 +969,71 @@ void U3CocoaPumpEvents(void) {
         HandleSDLEvent(&event);
 }
 
-void U3CocoaPresentMainSurface(void) {
-    if (!gRenderer || !gTexture || !gMainBitmap.pixels)
+/* Optional CRT-style scanline overlay.
+ *
+ * Drawn as one darkened band per *game* pixel row rather than as a fixed
+ * striped texture, so the line spacing tracks the real destination height and
+ * stays even at any scale factor -- a pre-baked texture sampled at 3x would
+ * give a 1.5-on/1.5-off pattern that beats against the pixel grid.
+ *
+ * Skipped below 2x, where there is no room for a dark row between the bright
+ * ones and the filter would only halve the overall brightness.
+ */
+static void DrawScanlines(const SDL_Rect *dest) {
+    int rows = gMainBitmap.height;
+    if (rows <= 0 || dest->h < rows * 2)
         return;
+    int thickness = (dest->h / rows) / 2;
+    if (thickness < 1)
+        thickness = 1;
+    SDL_SetRenderDrawBlendMode(gRenderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(gRenderer, 0, 0, 0, 96);
+    for (int row = 0; row < rows; ++row) {
+        int bottom = dest->y + (int)(((long)(row + 1) * dest->h) / rows);
+        SDL_Rect line = {dest->x, bottom - thickness, dest->w, thickness};
+        SDL_RenderFillRect(gRenderer, &line);
+    }
+    SDL_SetRenderDrawBlendMode(gRenderer, SDL_BLENDMODE_NONE);
+}
+
+/* Draw one frame into the renderer's back buffer without presenting it, so the
+ * readback hook below can inspect exactly what the player would see. */
+static bool RenderFrame(void) {
+    if (!gRenderer || !gTexture || !gMainBitmap.pixels)
+        return false;
     SDL_UpdateTexture(gTexture, NULL, gMainBitmap.pixels, (int)gMainBitmap.stride);
-    int winW = gMainBitmap.width * gScale, winH = gMainBitmap.height * gScale;
-    if (gWindow)
-        SDL_GetWindowSize(gWindow, &winW, &winH);
-    int scale, offX, offY;
-    ComputePresentation(winW, winH, gMainBitmap.width, gMainBitmap.height, &scale, &offX, &offY);
+    SDL_Rect destination;
+    CurrentPresentation(&destination);
+    /* Clear every frame: the letterbox bars move when the window is resized,
+     * so stale content outside the destination rect would otherwise persist. */
     SDL_SetRenderDrawColor(gRenderer, 0, 0, 0, 255);
     SDL_RenderClear(gRenderer);
-    SDL_Rect destination = {offX, offY, gMainBitmap.width * scale, gMainBitmap.height * scale};
     SDL_RenderCopy(gRenderer, gTexture, NULL, &destination);
+    if (gScanlines)
+        DrawScanlines(&destination);
+    return true;
+}
+
+void U3CocoaPresentMainSurface(void) {
+    if (!RenderFrame())
+        return;
     SDL_RenderPresent(gRenderer);
+}
+
+bool U3LinuxVideoReadFrameForTesting(uint8_t *rgba, size_t capacity,
+                                     int *outWidth, int *outHeight) {
+    if (!gRenderer || !gTexture || !gMainBitmap.pixels)
+        return false;
+    SDL_Rect area;
+    CurrentPresentation(&area);
+    if (outWidth) *outWidth = area.w;
+    if (outHeight) *outHeight = area.h;
+    if (!rgba)
+        return true; /* size query only */
+    if (capacity < (size_t)area.w * (size_t)area.h * 4 || !RenderFrame())
+        return false;
+    return SDL_RenderReadPixels(gRenderer, &area, SDL_PIXELFORMAT_RGBA32,
+                                rgba, area.w * 4) == 0;
 }
 
 void U3CocoaFlushInput(void) {

@@ -111,6 +111,47 @@ static void U3IOConfigure(U3LinuxAssets *assets) {
     free(allocatedSaveDir);
 }
 
+/* A directory counts as an asset bundle only if it holds a readable
+ * manifest.json, which is what U3LinuxAssetsOpen requires. */
+static bool HasAssetManifest(const char *directory) {
+    if (!directory || !*directory) {
+        return false;
+    }
+    char manifestPath[512];
+    int written = snprintf(manifestPath, sizeof(manifestPath), "%s/manifest.json", directory);
+    if (written < 0 || (size_t)written >= sizeof(manifestPath)) {
+        return false;
+    }
+    return access(manifestPath, R_OK) == 0;
+}
+
+/* Append `suffix` to `base` into the caller's buffer, returning it only if the
+ * result is a real asset bundle. Lets the XDG probe below stay a flat list. */
+static const char *AssetCandidate(char *buffer, size_t size,
+                                  const char *base, const char *suffix) {
+    if (!base || !*base) {
+        return NULL;
+    }
+    int written = snprintf(buffer, size, "%s%s", base, suffix);
+    if (written < 0 || (size_t)written >= size) {
+        return NULL;
+    }
+    return HasAssetManifest(buffer) ? buffer : NULL;
+}
+
+/* Locate the exported asset bundle, in descending order of explicitness:
+ *
+ *   1. $U3_ASSETS_DIRECTORY
+ *   2. --assets <dir>
+ *   3. a bare path argument that looks like a bundle
+ *   4. directories relative to the current one (a build tree)
+ *   5. $XDG_DATA_HOME/ultima3/assets, then ~/.local/share/ultima3/assets
+ *   6. $XDG_DATA_DIRS entries, then /usr/local/share and /usr/share
+ *
+ * The last two groups are what let an installed `ultima3` be launched from any
+ * working directory, or from a desktop entry that sets none at all -- before
+ * them, only a launch from the build tree could find its own data.
+ */
 static const char *FindAssetsDirectory(int argc, char **argv) {
     const char *env = getenv("U3_ASSETS_DIRECTORY");
     if (env && env[0] != '\0') {
@@ -134,28 +175,73 @@ static const char *FindAssetsDirectory(int argc, char **argv) {
             ++i;
             continue;
         }
-        if (argv[i][0] != '-') {
-            char manifestPath[512];
-            snprintf(manifestPath, sizeof(manifestPath), "%s/manifest.json", argv[i]);
-            if (access(manifestPath, R_OK) == 0) {
-                return argv[i];
-            }
+        if (argv[i][0] != '-' && HasAssetManifest(argv[i])) {
+            return argv[i];
         }
     }
 
-    static const char *candidates[] = {
+    static const char *relative[] = {
         "assets",
         "build/linux-game/assets",
         "../assets"
     };
-    for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); ++i) {
-        char manifestPath[512];
-        snprintf(manifestPath, sizeof(manifestPath), "%s/manifest.json", candidates[i]);
-        if (access(manifestPath, R_OK) == 0) {
-            return candidates[i];
+    for (size_t i = 0; i < sizeof(relative) / sizeof(relative[0]); ++i) {
+        if (HasAssetManifest(relative[i])) {
+            return relative[i];
         }
     }
 
+    /* Static so the chosen path outlives this function, matching the string
+     * literals and argv pointers the other branches return. */
+    static char resolved[512];
+    const char *found = NULL;
+
+    const char *xdgDataHome = getenv("XDG_DATA_HOME");
+    if (xdgDataHome && *xdgDataHome) {
+        found = AssetCandidate(resolved, sizeof(resolved), xdgDataHome, "/ultima3/assets");
+    } else {
+        found = AssetCandidate(resolved, sizeof(resolved), getenv("HOME"),
+                               "/.local/share/ultima3/assets");
+    }
+    if (found) {
+        return found;
+    }
+
+    /* $XDG_DATA_DIRS is a colon-separated search path; walk it in order before
+     * falling back to the defaults the spec prescribes when it is unset. */
+    const char *dataDirs = getenv("XDG_DATA_DIRS");
+    if (dataDirs && *dataDirs) {
+        for (const char *entry = dataDirs; *entry;) {
+            const char *separator = strchr(entry, ':');
+            size_t length = separator ? (size_t)(separator - entry) : strlen(entry);
+            if (length > 0 && length < sizeof(resolved) / 2) {
+                char base[256];
+                memcpy(base, entry, length);
+                base[length] = '\0';
+                found = AssetCandidate(resolved, sizeof(resolved), base, "/ultima3/assets");
+                if (found) {
+                    return found;
+                }
+            }
+            entry += length;
+            if (*entry) {
+                ++entry;
+            }
+        }
+    }
+
+    static const char *systemPaths[] = {
+        "/usr/local/share/ultima3/assets",
+        "/usr/share/ultima3/assets"
+    };
+    for (size_t i = 0; i < sizeof(systemPaths) / sizeof(systemPaths[0]); ++i) {
+        if (HasAssetManifest(systemPaths[i])) {
+            return systemPaths[i];
+        }
+    }
+
+    /* Nothing found. Return the conventional relative path so the caller's
+     * error message names something a player can act on. */
     return "assets";
 }
 
@@ -165,9 +251,17 @@ static void PrintUsage(const char *prog) {
     fprintf(stdout, "Display options:\n");
     fprintf(stdout, "  --windowed, --window     Run in windowed mode (default)\n");
     fprintf(stdout, "  --fullscreen             Run in fullscreen mode\n");
-    fprintf(stdout, "  --scale <1|2>            Window scale multiplier (default: 1)\n");
+    fprintf(stdout, "  --scale <n>              Initial window scale multiplier (default: 1)\n");
     fprintf(stdout, "  --classic                Use classic 640x384 appearance\n");
     fprintf(stdout, "  --modern                 Use modern appearance with character portraits and status bars\n");
+    fprintf(stdout, "  --integer-scale          Scale by whole pixels, keeping the pixel grid crisp (default)\n");
+    fprintf(stdout, "  --smooth-scale           Fit the window exactly, preserving aspect ratio\n");
+    fprintf(stdout, "  --crt                    Enable the CRT scanline filter\n");
+    fprintf(stdout, "  --no-crt                 Disable the CRT scanline filter\n");
+    fprintf(stdout, "\nDisplay keys (also saved to the preferences file):\n");
+    fprintf(stdout, "  F11, Alt+Enter           Toggle fullscreen\n");
+    fprintf(stdout, "  F10                      Toggle the CRT scanline filter\n");
+    fprintf(stdout, "  F8                       Toggle smooth vs. whole-pixel scaling\n");
     fprintf(stdout, "\nAudio options:\n");
     fprintf(stdout, "  --no-audio               Disable audio playback\n");
     fprintf(stdout, "  --speech                 Enable text-to-speech synthesis\n");
@@ -190,6 +284,9 @@ int main(int argc, char *argv[]) {
     bool classic = false;
     bool modern = false;
     bool noAudio = false;
+    /* -1 leaves the stored preference alone; 0/1 override it. */
+    int smoothScaling = -1;
+    int scanlines = -1;
 
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
@@ -211,6 +308,14 @@ int main(int argc, char *argv[]) {
             classic = true;
         } else if (!strcmp(argv[i], "--modern")) {
             modern = true;
+        } else if (!strcmp(argv[i], "--smooth-scale")) {
+            smoothScaling = 1;
+        } else if (!strcmp(argv[i], "--integer-scale")) {
+            smoothScaling = 0;
+        } else if (!strcmp(argv[i], "--crt")) {
+            scanlines = 1;
+        } else if (!strcmp(argv[i], "--no-crt")) {
+            scanlines = 0;
         } else if (!strcmp(argv[i], "--no-audio")) {
             noAudio = true;
         } else if (!strcmp(argv[i], "--speech")) {
@@ -288,6 +393,12 @@ int main(int argc, char *argv[]) {
         U3PlatformSetBooleanPreference(U3PreferenceSpeechDisabled, false);
     }
     U3LinuxVideoConfigure(assets, "Ultima III", scale);
+    if (smoothScaling >= 0) {
+        U3LinuxVideoSetSmoothScaling(smoothScaling != 0);
+    }
+    if (scanlines >= 0) {
+        U3LinuxVideoSetScanlines(scanlines != 0);
+    }
     U3LinuxAudioConfigure(assetsDir, noAudio);
     U3LinuxCarbonConfigure(assetsDir);
     U3IOConfigure(assets);

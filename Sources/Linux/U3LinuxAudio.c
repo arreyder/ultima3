@@ -27,6 +27,7 @@
 #include <fluidsynth.h>
 #include <dlfcn.h>
 #include <strings.h>
+#include <unistd.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,6 +35,7 @@
 
 extern void GetPascalStringFromArrayByIndex(uint8_t *pstringPtr, const void *identifier, int index) __attribute__((weak));
 extern bool U3PlatformGetBooleanPreference(U3PreferenceKey key) __attribute__((weak));
+extern int32_t U3PlatformGetIntegerPreference(U3PreferenceKey key) __attribute__((weak));
 
 /* ---- The 14 contract functions' 5 companion globals -----------------
  *
@@ -119,6 +121,9 @@ static fluid_player_t *gFluidPlayer = NULL;
 static char *gCurrentSongPath = NULL;
 static bool gMusicReady = false;
 static float gMusicGain = 0.2f; /* FluidSynth's own default */
+/* Which SoundFont the probe in U3AudioLoadSoundFont settled on; kept so the
+ * choice can be reported and asserted on rather than only logged. */
+static char *gSoundFontPath = NULL;
 
 /* ======================================================================
  * Small helpers
@@ -385,8 +390,8 @@ static int U3AudioFindFreeVoice(void) {
 
 void U3AudioPlaySound(U3SoundEffect effect, bool forceAsync) {
     /* Our mixer never blocks the caller, so forceAsync (which on macOS only
-     * controlled whether the cursor was hidden during a *synchronous*
-     * QuickTime play call) has nothing to toggle here. */
+     * controlled whether the cursor was hidden during a *synchronous* play
+     * call on the legacy media framework) has nothing to toggle here. */
     (void)forceAsync;
     if (gHardDisabled || gSoundIncapable || gSettings.soundDisabled || !gDeviceOpen) return;
     if (!U3AudioLoadEffect(effect)) return;
@@ -503,6 +508,72 @@ static void U3AudioStopSong(void) {
     gCurrentSongPath = NULL;
 }
 
+/* System-wide General MIDI banks, tried in order once the bundled one is
+ * unavailable. These are the canonical locations the common distribution
+ * packages install to, so a slim package that ships no SoundFont of its own
+ * still gets music with no configuration:
+ *
+ *   fluid-soundfont-gm / timgm6mb-soundfont (Debian, Ubuntu) install under
+ *   /usr/share/sounds/sf2 and register an /etc/alternatives "default-GM" link;
+ *   soundfont-fluid (Fedora) and soundfont-fluidr3mono-gm (Arch) install under
+ *   /usr/share/soundfonts with a "default" link.
+ *
+ * The .sf3 entry is last because it is Vorbis-compressed: FluidSynth loads it
+ * only when built with libsndfile support, and the probe simply moves on when
+ * it cannot. Candidates are tried by actually loading them rather than merely
+ * checking that the file exists, so an unreadable or corrupt bank is skipped
+ * instead of taken as success.
+ */
+static const char *kU3SystemSoundFonts[] = {
+    "/usr/share/sounds/sf2/default-GM.sf2",
+    "/usr/share/sounds/sf2/FluidR3_GM.sf2",
+    "/usr/share/sounds/sf2/TimGM6mb.sf2",
+    "/usr/share/soundfonts/default.sf2",
+    "/usr/share/soundfonts/FluidR3_GM.sf2",
+    "/usr/share/sounds/sf3/default-GM.sf3",
+};
+
+/* Load the first usable SoundFont into gFluidSynth, returning its path (which
+ * the caller owns) or NULL if nothing loaded. */
+static char *U3AudioLoadSoundFont(void) {
+    const char *override = getenv("U3_MIDI_SOUNDBANK");
+    if (override && override[0]) {
+        /* An explicitly named bank is authoritative: if it will not load, say
+         * so rather than quietly substituting a different one, which would
+         * hide the typo or bad download the player is trying to diagnose. */
+        if (fluid_synth_sfload(gFluidSynth, override, 1) != FLUID_FAILED) {
+            return strdup(override);
+        }
+        fprintf(stderr, "U3Audio: $U3_MIDI_SOUNDBANK could not be loaded (%s).\n", override);
+        return NULL;
+    }
+
+    /* The bundled bank stays first so a complete install sounds exactly as it
+     * always has; the system probe below is a fallback, not a replacement.
+     * Checked with access() before loading so a bundle that simply ships no
+     * SoundFont falls through quietly, instead of making FluidSynth log a
+     * failure for a file we are about to stop caring about. */
+    char *bundled = U3AudioJoinAssetPath("Resources/MusicMIDI/GeneralUser-GS.sf2");
+    if (bundled && access(bundled, R_OK) == 0 &&
+        fluid_synth_sfload(gFluidSynth, bundled, 1) != FLUID_FAILED) {
+        return bundled;
+    }
+    free(bundled);
+
+    for (size_t i = 0; i < sizeof(kU3SystemSoundFonts) / sizeof(kU3SystemSoundFonts[0]); ++i) {
+        const char *candidate = kU3SystemSoundFonts[i];
+        if (access(candidate, R_OK) != 0) continue;
+        if (fluid_synth_sfload(gFluidSynth, candidate, 1) == FLUID_FAILED) {
+            fprintf(stderr, "U3Audio: system SoundFont %s is present but would not load.\n",
+                    candidate);
+            continue;
+        }
+        fprintf(stderr, "U3Audio: using system SoundFont %s\n", candidate);
+        return strdup(candidate);
+    }
+    return NULL;
+}
+
 void U3AudioSetUpMusic(void) {
     if (gMusicIncapable) return;
     if (gHardDisabled || !gAssetsDirectory) {
@@ -537,14 +608,12 @@ void U3AudioSetUpMusic(void) {
         return;
     }
 
-    const char *override = getenv("U3_MIDI_SOUNDBANK");
-    char *soundfontPath = (override && override[0]) ? strdup(override)
-                                                      : U3AudioJoinAssetPath("Resources/MusicMIDI/GeneralUser-GS.sf2");
-    bool loaded = soundfontPath && fluid_synth_sfload(gFluidSynth, soundfontPath, 1) != FLUID_FAILED;
-    if (!loaded) {
-        fprintf(stderr, "U3Audio: SoundFont unavailable (%s); music unavailable.\n",
-                soundfontPath ? soundfontPath : "no path");
-        free(soundfontPath);
+    char *soundfontPath = U3AudioLoadSoundFont();
+    if (!soundfontPath) {
+        fprintf(stderr, "U3Audio: no usable SoundFont found; music unavailable.\n");
+        fprintf(stderr, "U3Audio: install a General MIDI bank (e.g. Debian/Ubuntu "
+                        "'fluid-soundfont-gm', Arch/Fedora 'soundfont-fluid') or set "
+                        "$U3_MIDI_SOUNDBANK to one.\n");
         delete_fluid_synth(gFluidSynth);
         gFluidSynth = NULL;
         delete_fluid_settings(gFluidSettings);
@@ -552,7 +621,8 @@ void U3AudioSetUpMusic(void) {
         gMusicIncapable = true;
         return;
     }
-    free(soundfontPath);
+    free(gSoundFontPath);
+    gSoundFontPath = soundfontPath;
 
     gMusicGain = 0.2f * ((float)U3AudioVolumeMix(gSettings.musicVolumePercent) / (float)SDL_MIX_MAXVOLUME);
     fluid_synth_set_gain(gFluidSynth, gMusicGain);
@@ -563,6 +633,8 @@ void U3AudioCloseMusic(void) {
     U3AudioStopSong();
     if (gFluidSynth) { delete_fluid_synth(gFluidSynth); gFluidSynth = NULL; }
     if (gFluidSettings) { delete_fluid_settings(gFluidSettings); gFluidSettings = NULL; }
+    free(gSoundFontPath);
+    gSoundFontPath = NULL;
     gMusicReady = false;
 }
 
@@ -652,7 +724,35 @@ void U3AudioUpdateMusic(void) {
  * Preferences
  * ==================================================================== */
 
+/* Refresh gSettings from stored preferences.
+ *
+ * The macOS reference (ApplyVolumePreferences in UltimaSound.m) reads the
+ * volume and mute preferences itself on every apply, so this does too: it
+ * makes the game's own existing U3AudioApplyPreferences() call sites -- at
+ * startup in UltimaMain.c and after the preferences dialog in UltimaMacIF.c --
+ * behave the same on both platforms. Without this the stored SoundVolume,
+ * MusicVolume, SoundDisabled and MusicDisabled values were read by nobody on
+ * Linux and the compiled-in defaults (unmuted, 100%) always won.
+ *
+ * Read through weak symbols, as U3LinuxSpeech.c reads its own preference, so
+ * this file still links without U3LinuxPlatform; when it does, the last values
+ * pushed by U3LinuxAudioSetSettings stay in force instead.
+ */
+static void RefreshSettingsFromPreferences(void) {
+    if (!U3PlatformGetBooleanPreference || !U3PlatformGetIntegerPreference) {
+        return;
+    }
+    /* U3AudioVolumeMix already treats < 1 as "use the default of 100" and
+     * clamps above it, so the stored values pass through unvalidated -- the
+     * same latitude ApplyVolumePreferences gives them. */
+    gSettings.soundDisabled = U3PlatformGetBooleanPreference(U3PreferenceSoundDisabled);
+    gSettings.musicDisabled = U3PlatformGetBooleanPreference(U3PreferenceMusicDisabled);
+    gSettings.soundVolumePercent = (int16_t)U3PlatformGetIntegerPreference(U3PreferenceSoundVolume);
+    gSettings.musicVolumePercent = (int16_t)U3PlatformGetIntegerPreference(U3PreferenceMusicVolume);
+}
+
 void U3AudioApplyPreferences(void) {
+    RefreshSettingsFromPreferences();
     gEffectVolumeMix = U3AudioVolumeMix(gSettings.soundVolumePercent);
 
     if (gFluidSynth) {
@@ -770,6 +870,10 @@ void U3AudioSpeakMessages(int16_t messageID, int16_t additionalMessageID, int16_
  * Shutdown
  * ==================================================================== */
 
+const char *U3LinuxAudioSoundFontPath(void) {
+    return gSoundFontPath;
+}
+
 void U3LinuxAudioShutdown(void) {
     U3AudioCloseSpeech();
     U3AudioCloseMusic();
@@ -791,4 +895,10 @@ bool U3LinuxAudioDebugEffectFrameCount(U3SoundEffect effect, size_t *outFrames) 
 bool U3LinuxAudioDebugRenderMusic(int16_t *buffer, int frames) {
     if (!gFluidSynth || !gFluidPlayer || !buffer || frames <= 0) return false;
     return fluid_synth_write_s16(gFluidSynth, frames, buffer, 0, 2, buffer, 1, 2) == FLUID_OK;
+}
+
+bool U3LinuxAudioDebugSettings(U3LinuxAudioSettings *out) {
+    if (!out) return false;
+    *out = gSettings;
+    return true;
 }

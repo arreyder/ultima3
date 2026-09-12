@@ -101,7 +101,12 @@ if(U3_BUILD_GAME_CORE)
     add_library(u3linux-video STATIC Sources/Linux/U3LinuxVideo.c)
     target_include_directories(u3linux-video PUBLIC Sources Sources/Linux
         "${U3_SYSROOT_INCLUDE_DIR}" "${U3_SYSROOT_ARCH_REAL_DIR}")
-    target_link_libraries(u3linux-video PUBLIC u3linux-assets u3bitmap "${U3_SDL2_LIBRARY}")
+    # Video reads and writes display preferences through U3Platform.h. The
+    # dependency is one-way by design: U3LinuxPlatform.c never calls back into
+    # the window or event pump, it only exposes the input-source seam that
+    # main.c wires up.
+    target_link_libraries(u3linux-video PUBLIC u3linux-assets u3linux-platform u3bitmap
+        "${U3_SDL2_LIBRARY}")
     target_compile_options(u3linux-video PRIVATE -Wall -Wextra -Werror -fpascal-strings)
 
     add_executable(ultima3 Sources/Linux/main.c)
@@ -123,6 +128,35 @@ if(U3_BUILD_GAME_CORE)
         "${U3_JSON_LIBRARY}"
         "${U3_M_LIBRARY}")
     add_dependencies(ultima3 u3assets)
+
+    # ---- Installation -------------------------------------------------------
+    #
+    # `cmake --install build/linux-game --prefix /usr/local` lays the game out
+    # the way a distribution package would:
+    #
+    #   <prefix>/bin/ultima3
+    #   <prefix>/share/ultima3/assets/      (the exported asset bundle)
+    #   <prefix>/share/applications/        (the desktop entry)
+    #   <prefix>/share/icons/hicolor/       (32/64/128/256 px app icons)
+    #
+    # FindAssetsDirectory() in Sources/Linux/main.c probes
+    # <prefix>/share/ultima3/assets for the standard prefixes and for every
+    # $XDG_DATA_DIRS entry, so the installed binary finds its own data with no
+    # environment set and from any working directory.
+    include(GNUInstallDirs)
+    install(TARGETS ultima3 RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+    # Trailing slash: install the bundle's *contents* into .../assets, rather
+    # than nesting a second "assets" directory inside it.
+    install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/assets/"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/ultima3/assets")
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/packaging/ultima3.desktop"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/applications")
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/packaging/icons/hicolor"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/icons")
+    # Named for the installed program, not the CMake project ("Ultima3Portable"),
+    # which is an internal build label.
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/ultima3")
 
     if(BUILD_TESTING)
         add_executable(u3-legacy-memory-test tests/legacy-memory-test.c)
@@ -147,7 +181,12 @@ if(U3_BUILD_GAME_CORE)
         target_link_libraries(u3-linux-audio-test PRIVATE u3linux-audio u3linux-platform u3linux-carbon u3linux-assets)
         add_dependencies(u3-linux-audio-test u3assets)
         add_test(NAME linux-audio COMMAND u3-linux-audio-test "${CMAKE_CURRENT_BINARY_DIR}/assets")
-        set_tests_properties(linux-audio PROPERTIES ENVIRONMENT "SDL_AUDIODRIVER=dummy")
+        # U3_SAVE_DIRECTORY keeps the volume and mute preferences that
+        # U3AudioApplyPreferences now re-reads out of the developer's real
+        # ~/.config/ultima3, which would otherwise make this test's result
+        # depend on how they last played the game.
+        set_tests_properties(linux-audio PROPERTIES ENVIRONMENT
+            "SDL_AUDIODRIVER=dummy;U3_SAVE_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/test-prefs-audio")
 
         add_executable(u3-linux-platform-test tests/linux-platform-test.c)
         target_compile_options(u3-linux-platform-test PRIVATE -UNDEBUG)
@@ -166,7 +205,10 @@ if(U3_BUILD_GAME_CORE)
         target_link_libraries(u3-linux-video-test PRIVATE u3linux-video)
         add_dependencies(u3-linux-video-test u3assets)
         add_test(NAME linux-video COMMAND u3-linux-video-test "${CMAKE_CURRENT_BINARY_DIR}/assets")
-        set_tests_properties(linux-video PROPERTIES ENVIRONMENT "SDL_VIDEODRIVER=dummy")
+        # U3_SAVE_DIRECTORY keeps the display preferences the video layer now
+        # reads out of the developer's real ~/.config/ultima3.
+        set_tests_properties(linux-video PROPERTIES ENVIRONMENT
+            "SDL_VIDEODRIVER=dummy;U3_SAVE_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/test-prefs-video")
 
         add_test(NAME linux-boot-render COMMAND ultima3)
         set_tests_properties(linux-boot-render PROPERTIES ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;U3_ASSETS_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/assets;U3_STARTUP_RENDER_CHECK=${CMAKE_CURRENT_BINARY_DIR}/test-startup.bmp")

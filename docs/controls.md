@@ -36,7 +36,11 @@ From the repository root or build directory:
 |---|---|
 | `--windowed`, `--window` | Force windowed mode (default). Automatically clamps to 90% of screen bounds to prevent display overflows. |
 | `--fullscreen` | Run in desktop borderless fullscreen mode. |
-| `--scale <1\|2>` | Window scale multiplier (default: `1`). |
+| `--scale <n>` | Initial window scale multiplier (default: `1`). Clamped to fit the display. |
+| `--integer-scale` | Scale the game by whole pixels, keeping the original pixel grid crisp (default). |
+| `--smooth-scale` | Fit the window exactly, preserving aspect ratio, with linear filtering. |
+| `--crt` | Enable the CRT scanline filter. |
+| `--no-crt` | Disable the CRT scanline filter. |
 | `--classic` | Use classic Mac 1x appearance (640×384 canvas, text stats). |
 | `--modern` | Use modern appearance (character portraits, visual HP/Mana/Level bars, food gauges). |
 | `--speech` | Enable speech synthesis (auto-detects Piper neural or Speech Dispatcher). |
@@ -46,14 +50,47 @@ From the repository root or build directory:
 | `--no-audio` | Disable SDL audio output and FluidSynth MIDI playback. |
 | `--script <keys>` | Programmatically execute a sequence of turns/commands (for automated tests or headless agent control). |
 | `--screenshot <file>` | Capture the final rendered frame to a BMP or PNG file upon script completion. |
-| `--assets <dir>` | Explicit path to the exported `assets/` directory. |
+| `--assets <dir>` | Explicit path to the exported `assets/` directory. Otherwise discovered automatically (see [Asset discovery](#asset-discovery)). |
 | `-h`, `--help` | Print command usage and exit immediately without initializing video. |
+
+### Display Keys
+
+Handled by the window layer, not the game, so they never shadow an Ultima III
+command. Each one saves its new state to `~/.config/ultima3/preferences.conf`,
+so a choice made in-game persists the same way the CLI flags do.
+
+| Key | Action |
+|---|---|
+| `F11`, `Alt`+`Enter` | Toggle desktop fullscreen. |
+| `F10` | Toggle the CRT scanline filter. |
+| `F8` | Toggle smooth vs. whole-pixel scaling. |
+
+The window is freely resizable. Dragging it re-letterboxes the game live,
+preserving its 5:3 aspect ratio; shrinking it below 640×384 scales the whole
+screen down rather than cropping it.
+
+### Asset discovery
+
+With neither `--assets` nor `$U3_ASSETS_DIRECTORY` set, the game searches, in
+order: paths relative to the current directory, `$XDG_DATA_HOME/ultima3/assets`,
+`~/.local/share/ultima3/assets`, each `$XDG_DATA_DIRS` entry, then
+`/usr/local/share/ultima3/assets` and `/usr/share/ultima3/assets`. An installed
+build therefore runs from any working directory. See
+[packaging/README.md](../packaging/README.md).
+
+### SoundFont discovery
+
+MIDI music needs a General MIDI SoundFont. The game uses `$U3_MIDI_SOUNDBANK`
+if set, else the bundled `GeneralUser-GS.sf2`, else the first system bank it can
+load from `/usr/share/sounds/sf2`, `/usr/share/soundfonts` or
+`/usr/share/sounds/sf3` — so a package that ships no SoundFont of its own still
+plays music with no configuration.
 
 ---
 
 ## 2. Mouse Controls
 
-The Linux port maps mouse coordinates with integer scaling and letterboxing offsets, making mouse input accurate at any window size.
+The Linux port maps mouse coordinates through the inverse of whatever scaling and letterboxing is in effect, so clicks land on the intended tile at any window size, integer or fractional.
 
 ### Overworld, Towns & Castles
 * **Movement**: Click anywhere on the map relative to your party to walk in that direction (**North**, **South**, **East**, **West**, or **diagonals**).

@@ -33,3 +33,62 @@ void U3LinuxVideoConfigure(U3LinuxAssets *assets, const char *windowTitle, int s
  * U3LinuxVideoConfigure (still owned by the caller).
  */
 void U3LinuxVideoShutdown(void);
+
+/* ---------------------------------------------------------------------
+ * Presentation options
+ *
+ * How the software bitmap is scaled into the window. Both default to the
+ * stored preference (U3PreferenceLinuxSmoothScaling / ...Scanlines, see
+ * U3LinuxPlatform.h) the first time a surface is created; calling a setter
+ * overrides that, takes effect on the next present, and persists the new
+ * value so a choice made at the command line or in-game survives a restart.
+ *
+ * Safe to call before a window exists -- the state is applied when one is
+ * created -- which is what lets main.c honor its CLI flags.
+ * ------------------------------------------------------------------- */
+
+/* false: scale by whole pixels with nearest-neighbor sampling, keeping the
+ * original pixel grid exact. true: fit the window exactly, preserving aspect
+ * ratio, with linear sampling for the fractional factors that implies.
+ *
+ * Note that whole-pixel scaling cannot honor a window smaller than the game
+ * bitmap; below that size the presentation falls back to an aspect-preserving
+ * fit either way, so the whole screen stays visible. */
+void U3LinuxVideoSetSmoothScaling(bool smooth);
+bool U3LinuxVideoSmoothScaling(void);
+
+/* Overlay a CRT-style scanline filter. Has no visible effect below a 2x
+ * factor, where there is no room for a dark row between the bright ones. */
+void U3LinuxVideoSetScanlines(bool enabled);
+bool U3LinuxVideoScanlines(void);
+
+/* Test hook: the centered, aspect-preserving destination rectangle, in window
+ * pixels, that a bitmapWidth x bitmapHeight bitmap is presented into for a
+ * window of windowWidth x windowHeight under the current scaling mode.
+ *
+ * Exposed so the letterboxing, whole-pixel, and below-1x downscale behavior
+ * can be pinned without a real resizable window, which no headless SDL driver
+ * provides. */
+void U3LinuxVideoPresentationRectForTesting(int windowWidth, int windowHeight,
+                                            int bitmapWidth, int bitmapHeight,
+                                            int *outX, int *outY, int *outW, int *outH);
+
+/* Test hook: draw one frame exactly as U3CocoaPresentMainSurface would -- the
+ * scaled bitmap plus the scanline overlay if enabled -- and read back the
+ * rectangle the bitmap was drawn into, rather than presenting it.
+ *
+ * Lets the presentation be checked pixel by pixel under a headless driver,
+ * which is the only way to verify the overlay actually darkens the rows it
+ * should: the game's own screenshots capture the source bitmap, before any of
+ * this scaling and filtering happens.
+ *
+ * The read-back region excludes the letterbox bars, and its reported size
+ * gives the scale factor actually in play -- which the caller cannot assume,
+ * since the window is clamped to the display's usable bounds. Call with
+ * rgba == NULL to query that size, then again with a buffer of at least
+ * width*height*4 bytes, written as RGBA8 rows of width*4 bytes.
+ *
+ * Returns false if no surface exists, the buffer is too small, or the renderer
+ * cannot read back. */
+bool U3LinuxVideoReadFrameForTesting(uint8_t *rgba, size_t capacity,
+                                     int *outWidth, int *outHeight);

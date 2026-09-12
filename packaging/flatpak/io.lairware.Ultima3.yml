@@ -1,0 +1,119 @@
+# Flatpak manifest for the native Linux port of Ultima III: Exodus.
+#
+# STATUS: written from the build's real dependency list, but NOT yet built or
+# run. Unlike the CMake install target and the AppImage AppDir (both verified),
+# this manifest has never been through flatpak-builder -- treat the first build
+# as a bring-up, not a regression.
+#
+# Build and install locally:
+#
+#   # One-time: generate the Pillow module this manifest includes (see the
+#   # python3-pillow note under `modules` below for why it is not inlined).
+#   sh packaging/flatpak/generate-pillow-module.sh
+#
+#   flatpak install -y flathub org.freedesktop.Sdk//24.08 org.freedesktop.Platform//24.08
+#   flatpak-builder --user --install --force-clean \
+#       build/flatpak packaging/flatpak/io.lairware.Ultima3.yml
+#   flatpak run io.lairware.Ultima3
+#
+app-id: io.lairware.Ultima3
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+command: ultima3
+
+finish-args:
+  # Wayland where available, X11 as the fallback -- the port is SDL2, so both work.
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  # Hardware-accelerated presentation of the software bitmap.
+  - --device=dri
+  - --socket=pulseaudio
+  # Game controllers, for the gamepad support in section 4 of the roadmap.
+  # Narrower than --device=all, which would also hand over every other device.
+  - --device=input
+  # Speech synthesis talks to the session's Speech Dispatcher over D-Bus when
+  # one is running; without this the game falls back to no speech, which is a
+  # supported configuration rather than an error.
+  - --talk-name=org.freedesktop.speechd
+
+modules:
+  # Pillow is a build-time-only dependency: scripts/export-portable-assets.py
+  # uses it to decode the game's PNG/GIF/JPEG art into the raw RGBA bundle the
+  # runtime reads. The freedesktop SDK does not ship it.
+  #
+  # Not inlined here because a Flatpak source needs a pinned URL *and* sha256
+  # for every wheel in the dependency tree, and those must be generated against
+  # the versions current at packaging time rather than hard-coded from memory
+  # and silently rotting. generate-pillow-module.sh produces the file with
+  # flatpak-pip-generator, which is how Flathub handles this.
+  - python3-pillow.yml
+
+  # FluidSynth renders the MIDI soundtrack. Not in the freedesktop runtime;
+  # glib, which it needs, is. SDL2 and json-c come from the runtime itself.
+  - name: fluidsynth
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      # The game renders MIDI itself, pulling frames from the synth inside its
+      # own SDL audio callback (U3AudioCallback), and never opens one of
+      # FluidSynth's audio or MIDI drivers or runs its CLI. Turning them all off
+      # drops a long tail of dependencies the Flatpak would otherwise carry.
+      # Option names verified against the 2.6.0 CMakeLists, not assumed --
+      # `enable-sdl2` no longer exists, for instance.
+      - -Denable-readline=OFF
+      - -Denable-alsa=OFF
+      - -Denable-pulseaudio=OFF
+      - -Denable-pipewire=OFF
+      - -Denable-jack=OFF
+      - -Denable-oss=OFF
+      - -Denable-portaudio=OFF
+      - -Denable-dbus=OFF
+      - -Denable-ladspa=OFF
+      - -Denable-midishare=OFF
+      - -Denable-network=OFF
+      # Left ON deliberately: libsndfile is what decodes Vorbis-compressed .sf3
+      # banks, the last entry in this port's system SoundFont probe.
+      - -Denable-libsndfile=ON
+    sources:
+      # A git tag plus its resolved commit, rather than GitHub's generated
+      # tarball: the commit is immutable, so the pin cannot drift.
+      - type: git
+        url: https://github.com/FluidSynth/fluidsynth.git
+        tag: v2.6.0
+        commit: e0b9a9ddc5fd30d0745fca4dbb74369455030eb7
+    cleanup:
+      - /bin
+      - /include
+      - /lib/pkgconfig
+      - /share/man
+
+  - name: ultima3
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DU3_BUILD_GAME_CORE=ON
+      - -DU3_SANITIZERS=OFF
+      # The preserved game sources use Pascal string literals, which only
+      # Clang accepts; the SDK ships it alongside GCC.
+      - -DCMAKE_C_COMPILER=clang
+      - -DPython3_EXECUTABLE=/usr/bin/python3
+    sources:
+      - type: dir
+        path: ../..
+    post-install:
+      # The CMake install target already lays down the binary, the exported
+      # assets, the desktop entry and the hicolor icons under /app/share, but
+      # Flatpak requires both to be named for the application ID.
+      - install -Dm644 /app/share/applications/ultima3.desktop
+          /app/share/applications/io.lairware.Ultima3.desktop
+      - rm /app/share/applications/ultima3.desktop
+      - for size in 32 64 128 256; do
+          install -Dm644
+            "/app/share/icons/hicolor/${size}x${size}/apps/ultima3.png"
+            "/app/share/icons/hicolor/${size}x${size}/apps/io.lairware.Ultima3.png";
+          rm "/app/share/icons/hicolor/${size}x${size}/apps/ultima3.png";
+        done
+      - desktop-file-edit --set-icon=io.lairware.Ultima3
+          /app/share/applications/io.lairware.Ultima3.desktop

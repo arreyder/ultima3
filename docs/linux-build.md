@@ -77,3 +77,13 @@ Validated locally on x86-64 Pop!_OS 24.04 (Ubuntu Noble base), GCC 13.3,
 Python 3.12.3, Pillow 10.2.0: Release and sanitized Debug each pass all three
 CTest suites; independently generated manifests match. No macOS regression
 run or interactive Linux gameplay verification has been performed.
+
+## Installation and packaging
+
+`cmake --install` lays the game out under a prefix the way a distribution
+package would, and `Sources/Linux/main.c` probes the XDG data paths so an
+installed binary finds its own asset bundle from any working directory. The
+desktop entry, icons, AppImage recipe and Flatpak manifest live under
+`packaging/`; see [packaging/README.md](../packaging/README.md) for the layout,
+the install commands, and which artifacts have actually been built and run
+versus written but not yet verified.

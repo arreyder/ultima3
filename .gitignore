@@ -25,3 +25,6 @@ dist/
 
 # Local preferences / runtime state
 .config/
+
+# Generated Flatpak module (see packaging/flatpak/generate-pillow-module.sh)
+packaging/flatpak/python3-pillow.yml

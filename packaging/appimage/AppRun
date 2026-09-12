@@ -1,0 +1,27 @@
+#!/bin/sh
+# AppImage entry point.
+#
+# The AppDir is mounted at a different path on every run, so the game cannot
+# find its data through the standard prefixes FindAssetsDirectory() probes.
+# Point it at the bundled copy explicitly -- respecting an existing value, so a
+# player can still run the AppImage against their own asset build.
+set -eu
+
+HERE="$(dirname "$(readlink -f "$0")")"
+
+if [ -z "${U3_ASSETS_DIRECTORY:-}" ]; then
+    U3_ASSETS_DIRECTORY="$HERE/usr/share/ultima3/assets"
+    export U3_ASSETS_DIRECTORY
+fi
+
+# Bundled libraries come first, but the host's copies still win for anything
+# we deliberately did not bundle (graphics drivers, glibc).
+export LD_LIBRARY_PATH="$HERE/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+# Speech and MIDI are optional; if the bundle carries them, use them.
+if [ -z "${U3_MIDI_SOUNDBANK:-}" ] && [ -f "$HERE/usr/share/ultima3/soundfont.sf2" ]; then
+    U3_MIDI_SOUNDBANK="$HERE/usr/share/ultima3/soundfont.sf2"
+    export U3_MIDI_SOUNDBANK
+fi
+
+exec "$HERE/usr/bin/ultima3" "$@"
