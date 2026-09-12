@@ -18,6 +18,7 @@ void DrawButton(short butNum, Boolean pushed, Boolean dim);
 void SetButtonRect(Rect* rect, short butNum);
 Boolean HandleButtonClick(Point point, short butNum);
 void U3ButtonBounds(Rect *rect, short butNum);
+char U3MainMenuButtonKey(Point point);
 void ConfigureFilter(short setOK, short setCancel);
 void DoAutoHeal(void);
 void RestoreDisplay(void);

@@ -361,6 +361,35 @@ void U3ButtonBounds(Rect *rect, short butNum) {
             (butOffsetY[butNum] + butBottom[butNum] - butTop[butNum]) * scale);
 }
 
+char U3MainMenuButtonKey(Point point) {
+    extern short gUpdateWhere;
+    short buttons[] = {0, 1, 8, 2};
+    char keys[] = {'R', 'O', 'A', 'J'};
+    if (gUpdateWhere == 6) {
+        int count = 0;
+        Boolean formed = FALSE;
+        for (int i = 1; i <= 20; ++i) {
+            if (Player[i][0]) ++count;
+            if (Player[i][16]) formed = TRUE;
+        }
+        buttons[0] = 3; buttons[1] = 4;
+        buttons[2] = 5 + formed; buttons[3] = 7;
+        keys[0] = count < 20 ? 'C' : 0;
+        keys[1] = count ? 'T' : 0;
+        keys[2] = count ? (formed ? 'D' : 'F') : 0;
+        keys[3] = 27;
+    } else if (gUpdateWhere != 5) {
+        return 0;
+    }
+    for (int i = 0; i < 4; ++i) {
+        Rect bounds;
+        U3ButtonBounds(&bounds, buttons[i]);
+        if (PtInRect(point, &bounds))
+            return keys[i];
+    }
+    return 0;
+}
+
 void DrawButton(short butNum, Boolean pushed, Boolean dim) {
     Rect fromRect, toRect;
     short height;

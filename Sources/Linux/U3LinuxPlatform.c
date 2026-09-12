@@ -241,6 +241,7 @@ extern char Macro[] __attribute__((weak));
 extern void DecMacro(void) __attribute__((weak));
 extern char U3MainMenuButtonKey(Point mouse) __attribute__((weak));
 extern void CursorUpdate(void) __attribute__((weak));
+extern void U3CocoaPresentMainSurface(void) __attribute__((weak));
 
 static void SyncLegacyKeyGlobals(char key, bool isMouse) {
     if (&gKeyPress)
@@ -348,6 +349,8 @@ bool U3PlatformGetKeyMouse(uint8_t mode) {
 }
 
 int16_t U3PlatformWaitKeyMouse(void) {
+    if (&U3CocoaPresentMainSurface)
+        U3CocoaPresentMainSurface();
     while (!GameOrHostRequestedQuit() && !U3PlatformGetKeyMouse(1)) {
         /* U3PlatformGetKeyMouse(1) itself waits ~83ms per call via the
          * input source (or the default source's honest sleep), so this

@@ -586,6 +586,8 @@ void *U3CocoaCreateMainSurface(short xposn, short yposn, short width, short heig
                                    posX, posY, winW, winH, flags);
         if (!gWindow)
             return NULL;
+        if (!gHeadlessDiagnostic)
+            SDL_RaiseWindow(gWindow);
         gRenderer = SDL_CreateRenderer(gWindow, -1, SDL_RENDERER_PRESENTVSYNC);
         if (!gRenderer)
             gRenderer = SDL_CreateRenderer(gWindow, -1, 0);

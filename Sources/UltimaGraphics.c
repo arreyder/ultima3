@@ -647,6 +647,7 @@ void DrawDemo(void) {
         }
     }
     ForceUpdateMain();
+    U3CocoaPumpEvents();
     storeUpdate = gUpdateWhere;
     gUpdateWhere = 0;
     IdleUntil(gTime + 4);
@@ -837,6 +838,10 @@ void DemoUpdate(short ptr) {
         for (i = repet; i > 0; i--) {
             for (j = 1; j < 5; j++) {
                 DrawDemo();
+                if (U3PlatformGetKeyMouse(2)) {
+                    gInterrupt = TRUE;
+                    return;
+                }
             }
         }
     }
@@ -1309,6 +1314,7 @@ void DrawMenu(void) {
 
     LWGetScreenRect(&myRect);
     LWValidWindowRect(gMainWindow, &myRect);
+    ForceUpdateMain();
 }
 
 void DrawDemoScreen(void) {

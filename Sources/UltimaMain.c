@@ -344,7 +344,6 @@ void MainLoop(void) {
 }
 
 void Intro(void) {
-
     gUpdateWhere = 1;
     DrawFrame(3);
     FadeOnExodusUltima();
@@ -355,6 +354,7 @@ void Intro(void) {
         CenterMessage(54, 23);
         DrawFramePiece(12, 12, 23);
         DrawFramePiece(13, 27, 23);
+        ForceUpdateMain();
         if (getenv("U3_BOOT_CHECK") || getenv("U3_WORLD_RENDER_CHECK") ||
             getenv("U3_WORLD_INPUT_CHECK") || getenv("U3_WORLD_MOUSE_CHECK")) {
             fprintf(stderr, "Boot check: intro ready\n");
@@ -373,13 +373,16 @@ void Demo(void) {
     if (getenv("U3_BOOT_CHECK") || getenv("U3_WORLD_RENDER_CHECK") ||
         getenv("U3_WORLD_INPUT_CHECK") || getenv("U3_WORLD_MOUSE_CHECK"))
         U3CocoaQueueDiagnosticKey(' ');
-    while (!U3PlatformGetKeyMouse(2)) {
+    while (!U3PlatformGetKeyMouse(2) && !gDone) {
         DemoUpdate(demoptr);
+        if (gInterrupt || gDone)
+            break;
         U3AudioUpdateMusic();
         demoptr++;
         if (demoptr > 511)
             demoptr = 0;
     }
+    gInterrupt = FALSE;
     gSongCurrent = gSongNext;
     EnableMenus();
 }
@@ -397,6 +400,7 @@ void MainMenu(void) {
             LWDisableMenuItem(gFileMenu, ABORTID);
             DrawMenu();
         }
+        ForceUpdateMain();
         if (getenv("U3_BOOT_CHECK")) {
             U3CocoaPumpEvents();
             Boolean written = U3CocoaWriteMainBitmap(getenv("U3_BOOT_CHECK"));
@@ -474,6 +478,7 @@ organize:
             U3RenderClearBottom();
             DrawOrganizeMenu();
         }
+        ForceUpdateMain();
         tx = 24;
         ty = 13;
         gUpdateWhere = 6;
@@ -689,6 +694,7 @@ void DrawOrganizeMenu(void) {
     DrawButton(4, FALSE, (numChars < 1));     // terminate
     DrawButton(5 + formed, FALSE, (numChars < 1));
     DrawButton(7, FALSE, FALSE);
+    ForceUpdateMain();
 }
 
 void Examine(void) {

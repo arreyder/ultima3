@@ -22,3 +22,6 @@ tools/piper/
 
 # Local release artifacts
 dist/
+
+# Local preferences / runtime state
+.config/
