@@ -31,5 +31,8 @@ bool U3BitmapCopy(U3Bitmap *destination, U3BitmapRect destinationRect,
 bool U3BitmapCopyMasked(U3Bitmap *destination, U3BitmapRect destinationRect,
     const U3Bitmap *source, U3BitmapRect sourceRect,
     const U3Bitmap *mask, U3BitmapRect maskRect);
+bool U3BitmapCopyBlend(U3Bitmap *destination, U3BitmapRect destinationRect,
+    const U3Bitmap *source, U3BitmapRect sourceRect,
+    float blendFactor);
 
 #endif

@@ -13,6 +13,10 @@ _Random fun fact: Ultima III was one of the first games to acknowledge non-binar
 
 ## Build on modern macOS
 
+For the in-progress native Linux port, see the [Linux foundation build](docs/linux-build.md)
+and [port plan](docs/linux-port-plan.md). The current Linux target builds the
+portable bitmap library and asset bundle; it is not yet a playable game.
+
 Requirements:
 
 - macOS 13 or newer

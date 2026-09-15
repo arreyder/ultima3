@@ -264,7 +264,8 @@ void MainLoop(void) {
     demoptr = 0;
     CreateIntroData();
     if (!getenv("U3_COMMAND_TEXT_CHECK") && !getenv("U3_MODERN_TEXT_CHECK") && !getenv("U3_MAIN_MENU_INPUT_CHECK") &&
-        !getenv("U3_WORLD_INPUT_CHECK") && !getenv("U3_WORLD_MOUSE_CHECK"))
+        !getenv("U3_WORLD_INPUT_CHECK") && !getenv("U3_WORLD_MOUSE_CHECK") &&
+        !getenv("U3_SCRIPT"))
         Intro();
     U3RenderClearBottom();
     GetDemoRsrc();
@@ -297,13 +298,29 @@ void MainLoop(void) {
         return;
     }
     if (getenv("U3_WORLD_RENDER_CHECK") || getenv("U3_WORLD_INPUT_CHECK") ||
-        getenv("U3_WORLD_MOUSE_CHECK") || getenv("U3_PARTY_FLOW_CHECK")) {
+        getenv("U3_WORLD_MOUSE_CHECK") || getenv("U3_PARTY_FLOW_CHECK") ||
+        getenv("U3_SCRIPT")) {
         U3CharacterDraft draft = {{'A', 'd', 'a'}, {15, 15, 10, 10}, 'H', 'F', 'F'};
         short slot = 1;
-        while (slot <= 20 && Player[slot][0]) ++slot;
-        Boolean stored = slot <= 20 && StoreCreatedCharacter(slot, &draft);
-        if (stored)
+        while (slot <= 20 && Player[slot][0]) {
+            if (!memcmp(Player[slot], "Ada", 3)) {
+                memset(Player[slot], 0, sizeof(Player[slot]));
+                break;
+            }
+            ++slot;
+        }
+        if (slot > 20) {
+            slot = 20;
+            memset(Player[slot], 0, sizeof(Player[slot]));
+        }
+        Boolean stored = StoreCreatedCharacter(slot, &draft);
+        if (stored) {
+            for (int i = 1; i <= 20; ++i) {
+                if (Player[i][0] && Player[i][16])
+                    Player[i][16] = 0;
+            }
             memset(Party, 0, sizeof(Party));
+        }
         Boolean formed = stored && (getenv("U3_PARTY_FLOW_CHECK") ?
             U3StorePartySelection((short[4]){slot, 0, 0, 0}) :
             U3ApplyPartySelection((short[4]){slot, 0, 0, 0}));
@@ -342,7 +359,6 @@ void MainLoop(void) {
 }
 
 void Intro(void) {
-
     gUpdateWhere = 1;
     DrawFrame(3);
     FadeOnExodusUltima();
@@ -353,6 +369,7 @@ void Intro(void) {
         CenterMessage(54, 23);
         DrawFramePiece(12, 12, 23);
         DrawFramePiece(13, 27, 23);
+        ForceUpdateMain();
         if (getenv("U3_BOOT_CHECK") || getenv("U3_WORLD_RENDER_CHECK") ||
             getenv("U3_WORLD_INPUT_CHECK") || getenv("U3_WORLD_MOUSE_CHECK")) {
             fprintf(stderr, "Boot check: intro ready\n");
@@ -371,13 +388,16 @@ void Demo(void) {
     if (getenv("U3_BOOT_CHECK") || getenv("U3_WORLD_RENDER_CHECK") ||
         getenv("U3_WORLD_INPUT_CHECK") || getenv("U3_WORLD_MOUSE_CHECK"))
         U3CocoaQueueDiagnosticKey(' ');
-    while (!U3PlatformGetKeyMouse(2)) {
+    while (!U3PlatformGetKeyMouse(2) && !gDone) {
         DemoUpdate(demoptr);
+        if (gInterrupt || gDone)
+            break;
         U3AudioUpdateMusic();
         demoptr++;
         if (demoptr > 511)
             demoptr = 0;
     }
+    gInterrupt = FALSE;
     gSongCurrent = gSongNext;
     EnableMenus();
 }
@@ -395,6 +415,7 @@ void MainMenu(void) {
             LWDisableMenuItem(gFileMenu, ABORTID);
             DrawMenu();
         }
+        ForceUpdateMain();
         if (getenv("U3_BOOT_CHECK")) {
             U3CocoaPumpEvents();
             Boolean written = U3CocoaWriteMainBitmap(getenv("U3_BOOT_CHECK"));
@@ -472,6 +493,7 @@ organize:
             U3RenderClearBottom();
             DrawOrganizeMenu();
         }
+        ForceUpdateMain();
         tx = 24;
         ty = 13;
         gUpdateWhere = 6;
@@ -687,6 +709,7 @@ void DrawOrganizeMenu(void) {
     DrawButton(4, FALSE, (numChars < 1));     // terminate
     DrawButton(5 + formed, FALSE, (numChars < 1));
     DrawButton(7, FALSE, FALSE);
+    ForceUpdateMain();
 }
 
 void Examine(void) {
@@ -1505,7 +1528,45 @@ void Game(void) {
             gDone = TRUE;
             return;
         }
-        if (diagnosticTurns == 2) {
+        const char *script = getenv("U3_SCRIPT");
+        if (script && (size_t)diagnosticTurns >= strlen(script)) {
+            const char *outBmp = getenv("U3_SCREENSHOT");
+            if (outBmp) {
+                U3CocoaPumpEvents();
+                U3CocoaWriteMainBitmap(outBmp);
+                fprintf(stderr, "Script screenshot saved: %s\n", outBmp);
+            }
+            fprintf(stderr, "Script completed: %u turns, pos=(%d,%d) map=%d\n",
+                    diagnosticTurns, xpos, ypos, (int)Party[3]);
+            if (getenv("U3_KEEP_ALIVE")) {
+                fprintf(stderr, "\n=== Automated demonstration finished! You now have control of the party. ===\n");
+                unsetenv("U3_SCRIPT");
+            } else {
+                gDone = TRUE;
+                return;
+            }
+        }
+        if (script && !diagnosticInputQueued) {
+            int stepDelay = 0;
+            const char *delayStr = getenv("U3_STEP_DELAY_MS");
+            if (delayStr) {
+                stepDelay = atoi(delayStr);
+            } else if (!getenv("SDL_VIDEODRIVER")) {
+                stepDelay = 400;
+            }
+            if (stepDelay > 0) {
+                U3CocoaPresentMainSurface();
+                U3PlatformWaitTicks((stepDelay * 60 + 500) / 1000);
+                U3CocoaPumpEvents();
+            }
+
+            char nextKey = script[diagnosticTurns];
+            fprintf(stderr, "Script turn %u: executing '%c' at (%d,%d)\n",
+                    diagnosticTurns + 1, nextKey, xpos, ypos);
+            U3CocoaQueueDiagnosticKey(nextKey);
+            diagnosticInputQueued = TRUE;
+        }
+        if (!script && diagnosticTurns == 2) {
             const char *outputPath = getenv("U3_WORLD_MOUSE_CHECK") ?
                 getenv("U3_WORLD_MOUSE_CHECK") : getenv("U3_WORLD_INPUT_CHECK");
             U3CocoaPumpEvents();
@@ -1515,7 +1576,7 @@ void Game(void) {
             gDone = TRUE;
             return;
         }
-        if ((getenv("U3_WORLD_INPUT_CHECK") || getenv("U3_WORLD_MOUSE_CHECK")) && !diagnosticInputQueued) {
+        if (!script && (getenv("U3_WORLD_INPUT_CHECK") || getenv("U3_WORLD_MOUSE_CHECK")) && !diagnosticInputQueued) {
             fprintf(stderr, "World input: before (%d,%d)\n", xpos, ypos);
             if (getenv("U3_WORLD_MOUSE_CHECK"))
                 U3CocoaQueueDiagnosticMouse(600, 384);
@@ -1594,10 +1655,12 @@ void Game(void) {
                 default: break;
             }
             Routine6E35();
-            if (getenv("U3_WORLD_INPUT_CHECK") || getenv("U3_WORLD_MOUSE_CHECK")) {
+            if (getenv("U3_WORLD_INPUT_CHECK") || getenv("U3_WORLD_MOUSE_CHECK") || getenv("U3_SCRIPT")) {
                 ++diagnosticTurns;
-                fprintf(stderr, "World input: turn=%u key=%d mouse=%d after (%d,%d)\n",
-                        diagnosticTurns, (int)gKeyPress, (int)gMouseKey, xpos, ypos);
+                if (!getenv("U3_SCRIPT")) {
+                    fprintf(stderr, "World input: turn=%u key=%d mouse=%d after (%d,%d)\n",
+                            diagnosticTurns, (int)gKeyPress, (int)gMouseKey, xpos, ypos);
+                }
                 diagnosticInputQueued = FALSE;
             }
             if (StillDown()) {

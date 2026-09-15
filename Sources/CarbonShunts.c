@@ -50,6 +50,10 @@ void LWSetDialogPort(DialogPtr theDialog) {
 }
 
 void LWGetScreenRect(Rect *rect) {
+#ifdef U3_LINUX
+    extern void U3LinuxScreenBounds(Rect *rect);
+    U3LinuxScreenBounds(rect);
+#else
     CGRect bounds = CGDisplayBounds(CGMainDisplayID());
 
     if (CGRectGetWidth(bounds) <= 0 || CGRectGetHeight(bounds) <= 0) {
@@ -64,6 +68,7 @@ void LWGetScreenRect(Rect *rect) {
     rect->top = (short)CGRectGetMinY(bounds);
     rect->right = (short)CGRectGetMaxX(bounds);
     rect->bottom = (short)CGRectGetMaxY(bounds);
+#endif
 }
 
 const BitMap *LWPortCopyBits(CGrafPtr port) {
@@ -657,8 +662,13 @@ void CopyBits(const BitMap *srcBits, const BitMap *dstBits, const Rect *srcRect,
     U3BitmapRect from = {0}, to = {0};
     U3Bitmap *source = U3ResolveBitmap(srcBits, srcRect, &from);
     U3Bitmap *destination = U3ResolveBitmap(dstBits, dstRect, &to);
-    if (maskRgn || (mode != srcCopy && mode != ditherCopy))
+    if (maskRgn || (mode != srcCopy && mode != ditherCopy && mode != blend))
         return;
+    if (mode == blend) {
+        if (U3BitmapCopyBlend(destination, to, source, from, 0.5f) && destination == U3CocoaMainBitmap())
+            U3CocoaInvalidateMainSurface();
+        return;
+    }
     if (U3BitmapCopy(destination, to, source, from) && destination == U3CocoaMainBitmap())
         U3CocoaInvalidateMainSurface();
 }

@@ -137,3 +137,59 @@ bool U3BitmapCopyMasked(U3Bitmap *destination, U3BitmapRect destinationRect,
     const U3Bitmap *mask, U3BitmapRect maskRect) {
     return mask && U3BitmapCopyInternal(destination, destinationRect, source, sourceRect, mask, maskRect);
 }
+
+bool U3BitmapCopyBlend(U3Bitmap *destination, U3BitmapRect destinationRect,
+                      const U3Bitmap *source, U3BitmapRect sourceRect,
+                      float blendFactor) {
+    if (!destination || !source || !destination->pixels || !source->pixels ||
+        destinationRect.width <= 0 || destinationRect.height <= 0 ||
+        sourceRect.width <= 0 || sourceRect.height <= 0)
+        return false;
+    if (blendFactor <= 0.0f)
+        return true;
+    if (blendFactor >= 1.0f)
+        return U3BitmapCopy(destination, destinationRect, source, sourceRect);
+
+    int64_t left = destinationRect.x > 0 ? destinationRect.x : 0;
+    int64_t top = destinationRect.y > 0 ? destinationRect.y : 0;
+    int64_t right = (int64_t)destinationRect.x + destinationRect.width;
+    int64_t bottom = (int64_t)destinationRect.y + destinationRect.height;
+    if (right > destination->width) right = destination->width;
+    if (bottom > destination->height) bottom = destination->height;
+    if (left >= right || top >= bottom)
+        return true;
+
+    U3Bitmap snapshot = {0};
+    if (destination->pixels == source->pixels) {
+        if (!U3BitmapAllocate(&snapshot, source->width, source->height))
+            return false;
+        for (int y = 0; y < source->height; ++y)
+            memcpy(snapshot.pixels + y * snapshot.stride,
+                   source->pixels + y * source->stride, snapshot.stride);
+        source = &snapshot;
+    }
+
+    int srcWeight = (int)(blendFactor * 256.0f + 0.5f);
+    int dstWeight = 256 - srcWeight;
+
+    for (int64_t y = top; y < bottom; ++y) {
+        int64_t sy = sourceRect.y +
+            (y - destinationRect.y) * sourceRect.height / destinationRect.height;
+        if (sy < 0 || sy >= source->height)
+            continue;
+        for (int64_t x = left; x < right; ++x) {
+            int64_t sx = sourceRect.x +
+                (x - destinationRect.x) * sourceRect.width / destinationRect.width;
+            if (sx < 0 || sx >= source->width)
+                continue;
+            uint8_t *dst = destination->pixels + (size_t)y * destination->stride + (size_t)x * 4;
+            const uint8_t *src = source->pixels + (size_t)sy * source->stride + (size_t)sx * 4;
+            dst[0] = (uint8_t)((src[0] * srcWeight + dst[0] * dstWeight) >> 8);
+            dst[1] = (uint8_t)((src[1] * srcWeight + dst[1] * dstWeight) >> 8);
+            dst[2] = (uint8_t)((src[2] * srcWeight + dst[2] * dstWeight) >> 8);
+        }
+    }
+    U3BitmapDispose(&snapshot);
+    return true;
+}
+
